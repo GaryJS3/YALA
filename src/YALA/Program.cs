@@ -103,6 +103,13 @@ app.UseAntiforgery();
 
 app.MapStaticAssets();
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "YALA" })).AllowAnonymous();
+app.MapGet("/blazor.web.js", (IWebHostEnvironment environment) =>
+{
+    var path = Path.Combine(environment.WebRootPath, "_framework", "blazor.web.js");
+    return File.Exists(path)
+        ? Results.File(path, "text/javascript")
+        : Results.NotFound();
+}).AllowAnonymous();
 app.MapGet("/images/households/{householdId:guid}/{kind}/{fileName}", async (
     Guid householdId,
     string kind,
