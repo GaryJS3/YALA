@@ -5,10 +5,8 @@ using Microsoft.EntityFrameworkCore;
 using YALA.Components;
 using YALA.Components.Account;
 using YALA.Data;
-using YALA.Data.Entities;
 using YALA.Services;
 using System.Security.Claims;
-using System.Security.Cryptography;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -89,52 +87,6 @@ await using (var scope = app.Services.CreateAsyncScope())
     var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<ApplicationDbContext>>();
     await using var db = await factory.CreateDbContextAsync();
     await db.Database.MigrateAsync();
-}
-
-// Temporary, deployment-gated troubleshooting access. Remove this block and its
-// compose flag as soon as the live click behavior has been verified.
-if (app.Environment.IsProduction()
-    && string.Equals(Environment.GetEnvironmentVariable("YALA_TEMP_TEST_ACCOUNT"), "true", StringComparison.OrdinalIgnoreCase))
-{
-    await using var scope = app.Services.CreateAsyncScope();
-    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-    var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<ApplicationDbContext>>();
-    await using var db = await factory.CreateDbContextAsync();
-    var household = await db.Households.Where(x => !x.IsArchived).OrderBy(x => x.CreatedAt).FirstOrDefaultAsync();
-    if (household is null)
-        throw new InvalidOperationException("Cannot create temporary troubleshooting account: no active household exists.");
-
-    const string userName = "codex-debug-c6711c1";
-    if (await userManager.FindByNameAsync(userName) is null)
-    {
-        var password = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
-        var user = new ApplicationUser { UserName = userName, DisplayName = "Temporary Codex Troubleshooting" };
-        var createResult = await userManager.CreateAsync(user, password);
-        if (!createResult.Succeeded)
-            throw new InvalidOperationException($"Cannot create temporary troubleshooting account: {string.Join(" ", createResult.Errors.Select(x => x.Description))}");
-
-        try
-        {
-            user.DefaultHouseholdId = household.Id;
-            var updateResult = await userManager.UpdateAsync(user);
-            if (!updateResult.Succeeded)
-                throw new InvalidOperationException($"Cannot assign default household: {string.Join(" ", updateResult.Errors.Select(x => x.Description))}");
-
-            db.HouseholdMembers.Add(new HouseholdMember { HouseholdId = household.Id, UserId = user.Id });
-            await db.SaveChangesAsync();
-        }
-        catch
-        {
-            await userManager.DeleteAsync(user);
-            throw;
-        }
-
-        app.Logger.LogWarning("Temporary troubleshooting login created for household {HouseholdName}. Username: {UserName}; one-time password: {Password}", household.Name, userName, password);
-    }
-    else
-    {
-        app.Logger.LogWarning("Temporary troubleshooting login already exists; no new password was generated.");
-    }
 }
 
 // Configure the HTTP request pipeline.
