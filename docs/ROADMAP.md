@@ -41,6 +41,6 @@ Pantry inventory, expiration tracking, meal planning, recipes, nutrition trackin
 
 ## Progress notes
 
-- 2026-09-18: Fixed stale form submissions by synchronizing action-driven fields on input in Catalog, Stores, and Household screens. Browser acceptance covers adding a list item, catalog item, store, and store price after the interactive app is ready. Deployed commit `d1ddc20`; production health and WebSocket upgrade both respond successfully. Those checks do not prove a signed-in production circuit is delivering button events, so keep live interaction verification open.
+- 2026-09-18: Fixed stale form submissions by synchronizing action-driven fields on input in Catalog, Stores, and Household screens. The production reverse proxy was also returning 404 for `/_framework/blazor.web.js`, leaving server-side buttons inert; the app now serves the framework script through `/blazor.web.js` and explicitly includes ASP.NET web assets in publish output. Live acceptance verified empty-store validation, adding a store, saving a catalog item, and quick-adding a list item on deployed commit `db6c547`.
 - 2026-09-18: Added the application version and a unique assembly build identifier to the main-layout footer (and desktop rail) so users can confirm which build their browser loaded.
 - 2026-09-18: Initial roadmap created from the YALA product brief and current repository implementation. The next-up list distinguishes missing acceptance coverage and deployment validation from shipped application features.
