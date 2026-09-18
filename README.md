@@ -6,6 +6,8 @@ YALA is a small, self-hosted grocery list for one or more households. Each house
 
 The shopping list is the home screen. Familiar items stay in the catalog, so you can add them again without recreating them.
 
+See [the roadmap and progress tracker](docs/ROADMAP.md) for shipped features and planned work.
+
 ## Run with Docker Compose
 
 Docker Compose is the recommended self-hosted setup. It runs one ASP.NET Core container, stores the SQLite database, uploaded images, and Identity signing keys in one persistent volume, and listens on loopback port 8080 for a reverse proxy.

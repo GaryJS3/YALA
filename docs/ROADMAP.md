@@ -1,0 +1,44 @@
+# YALA Roadmap and Progress
+
+This file tracks the product direction and implementation status. Update it when work starts, ships, or is deliberately deferred. Keep the scope focused on a fast, self-hosted shared grocery list.
+
+## Shipped
+
+- [x] .NET 10 Blazor Server application with SQLite, EF Core migrations, and a single-container Docker deployment.
+- [x] Persistent `/data` volume for the database, images, and Identity data-protection keys; `/health` endpoint.
+- [x] First-run account and household setup, local sign-in, and closed public registration after setup.
+- [x] Multiple independent households, membership management, household switching, saved default household, rename, archive, and restore.
+- [x] Household-scoped catalog items, categories, favorites, aliases, product variants, barcodes, and optional images.
+- [x] Shopping list quick add/search, quantity changes, check/uncheck, recent/frequent suggestions, and clear-checked purchase history.
+- [x] Household-specific stores, item availability, store assignment, aisle/offer notes, and manual price history with last and average prices.
+- [x] Item and store list views; store assignment remains distinct from store availability.
+- [x] Live list-change notifications within the running application instance.
+- [x] Reverse-proxy deployment guidance, backup/restore steps, and Dockhand Git-stack deployment notes.
+- [x] Focused automated tests for shopping-list and household isolation.
+
+## Next up
+
+- [ ] Add broader service and UI acceptance coverage for account setup, household switching/default selection, catalog search and aliases, repeated adds, check/clear purchase history, stores, and prices.
+- [ ] Add explicit cross-household isolation coverage for catalog, variants, barcodes, stores/offers, prices, purchase history, favorites, and notifications.
+- [ ] Verify production deployment and upgrade/restore procedures against a real Docker host, including reverse-proxy WebSocket behavior.
+
+## Planned backlog
+
+These are future-friendly ideas from the original product brief; they are not commitments or current implementation requirements.
+
+- [ ] Camera barcode scanning.
+- [ ] Optional product lookup through Open Food Facts.
+- [ ] Installable PWA experience.
+- [ ] Receipt entry and estimated trip totals.
+- [ ] Store aisle ordering and per-store category ordering.
+- [ ] Import/export and copying items between households as independent records.
+- [ ] REST API, if a concrete integration need emerges.
+- [ ] Household-specific themes or icons.
+
+## Out of scope
+
+Pantry inventory, expiration tracking, meal planning, recipes, nutrition tracking, chores, calendars, grocery ordering, retailer integrations, coupons, loyalty cards, receipt OCR, budgeting, automatic price scraping, global product/store catalogs, complex household roles, public registration, and SaaS billing are outside YALA's intended scope unless the product direction is explicitly revisited.
+
+## Progress notes
+
+- 2026-09-18: Initial roadmap created from the YALA product brief and current repository implementation. The next-up list distinguishes missing acceptance coverage and deployment validation from shipped application features.
