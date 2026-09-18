@@ -104,7 +104,7 @@ if (app.Environment.IsProduction()
     if (household is null)
         throw new InvalidOperationException("Cannot create temporary troubleshooting account: no active household exists.");
 
-    const string userName = "codex-debug";
+    const string userName = "codex-debug-c6711c1";
     if (await userManager.FindByNameAsync(userName) is null)
     {
         var password = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
