@@ -30,11 +30,11 @@
                 <NavLink href="/stores"><span class="nav-icon">⌂</span>Stores</NavLink>
                 <NavLink href="/households"><span class="nav-icon">⌘</span>Households</NavLink>
             </nav>
-            <div class="rail-note"><span class="rail-note-dot"></span> Shared lists, kept simple.</div>
+            <div class="rail-note" title="YALA @BuildLabel"><span class="rail-note-dot"></span> @BuildLabel</div>
         </aside>
         <main class="main-content">
             @Body
-            <footer class="page-footer">YALA <span>·</span> the list your household actually uses</footer>
+            <footer class="page-footer">YALA <span>·</span> @BuildLabel</footer>
         </main>
     </div>
 </div>
@@ -45,5 +45,15 @@
 </div>
 
 @code {
+    private static readonly string BuildLabel = CreateBuildLabel();
+
     private static string Initial(string? value) => string.IsNullOrWhiteSpace(value) ? "Y" : value[..1].ToUpperInvariant();
+
+    private static string CreateBuildLabel()
+    {
+        var assembly = typeof(MainLayout).Assembly;
+        var version = assembly.GetName().Version?.ToString(3) ?? "unknown";
+        var build = assembly.ManifestModule.ModuleVersionId.ToString("N")[..8].ToLowerInvariant();
+        return $"v{version} · build {build}";
+    }
 }
