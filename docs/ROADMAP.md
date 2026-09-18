@@ -41,5 +41,5 @@ Pantry inventory, expiration tracking, meal planning, recipes, nutrition trackin
 
 ## Progress notes
 
-- 2026-09-18: Fixed stale form submissions by synchronizing action-driven fields on input in Catalog, Stores, and Household screens. Browser acceptance covers adding a list item, catalog item, store, and store price after the interactive app is ready. Deployed commit `cc64ff3`; production health and WebSocket upgrade both respond successfully.
+- 2026-09-18: Fixed stale form submissions by synchronizing action-driven fields on input in Catalog, Stores, and Household screens. Browser acceptance covers adding a list item, catalog item, store, and store price after the interactive app is ready. Deployed commit `d1ddc20`; production health and WebSocket upgrade both respond successfully.
 - 2026-09-18: Initial roadmap created from the YALA product brief and current repository implementation. The next-up list distinguishes missing acceptance coverage and deployment validation from shipped application features.
