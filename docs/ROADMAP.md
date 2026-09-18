@@ -41,4 +41,5 @@ Pantry inventory, expiration tracking, meal planning, recipes, nutrition trackin
 
 ## Progress notes
 
+- 2026-09-18: Fixed the false-ready window where prerendered Catalog, Stores, and Household forms accepted typing before Blazor attached, then submitted empty server-side values. Authenticated application routes now render after the interactive circuit is ready, and action-driven fields synchronize on input. Browser acceptance covers creating a list item, catalog item, and store without requiring a blur or startup delay.
 - 2026-09-18: Initial roadmap created from the YALA product brief and current repository implementation. The next-up list distinguishes missing acceptance coverage and deployment validation from shipped application features.

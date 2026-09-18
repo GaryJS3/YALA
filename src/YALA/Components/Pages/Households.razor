@@ -42,12 +42,12 @@
     <section class="content-card household-preferences">
         <div class="section-heading"><div><p class="eyebrow">HOUSEHOLD SETTINGS</p><h2>Name and categories</h2></div></div>
         <div class="inline-form">
-            <div class="form-field"><label for="household-name">Household name</label><input id="household-name" class="search-field" @bind="householdName" maxlength="80" /></div>
+            <div class="form-field"><label for="household-name">Household name</label><input id="household-name" class="search-field" @bind="householdName" @bind:event="oninput" maxlength="80" /></div>
             <button type="button" class="button button-outline" @onclick="RenameHouseholdAsync">Save name</button>
         </div>
         <div class="members-heading"><h3>Categories</h3><span>@categories.Count</span></div>
         <div class="inline-form category-add-form">
-            <div class="form-field"><label for="category-name">@(editingCategoryId is null ? "Add a category" : "Rename category")</label><input id="category-name" class="search-field" @bind="categoryName" maxlength="60" /></div>
+            <div class="form-field"><label for="category-name">@(editingCategoryId is null ? "Add a category" : "Rename category")</label><input id="category-name" class="search-field" @bind="categoryName" @bind:event="oninput" maxlength="60" /></div>
             <button type="button" class="button button-outline" @onclick="SaveCategoryAsync">@(editingCategoryId is null ? "Add category" : "Save category")</button>
             @if (editingCategoryId is not null) { <button type="button" class="text-button" @onclick="CancelCategoryEdit">Cancel</button> }
         </div>
@@ -112,7 +112,7 @@
     <p class="eyebrow">A DIFFERENT HOUSE, A DIFFERENT LIST</p>
     <h2>Create a household</h2>
     <p class="muted-copy">New households start fresh. Nothing from your other lists is copied.</p>
-    <div class="inline-form"><input class="search-field" @bind="newHouseholdName" placeholder="e.g. Parents' House" aria-label="New household name" /><button class="button button-outline" type="button" @onclick="CreateHouseholdAsync">Create household <span>+</span></button></div>
+    <div class="inline-form"><input class="search-field" @bind="newHouseholdName" @bind:event="oninput" placeholder="e.g. Parents' House" aria-label="New household name" /><button class="button button-outline" type="button" @onclick="CreateHouseholdAsync">Create household <span>+</span></button></div>
 </section>
 
 <section class="content-card create-user-panel">
@@ -120,9 +120,9 @@
         <summary><span class="eyebrow">INVITE SOMEONE WITHOUT EMAIL</span><strong>Create a local YALA account</strong><span class="details-plus">+</span></summary>
         <p class="muted-copy">Create a username and initial password, then give them access to this household.</p>
         <div class="form-grid">
-            <div class="form-field"><label for="new-user-name">Name</label><input id="new-user-name" @bind="newUserDisplayName" autocomplete="off" /></div>
-            <div class="form-field"><label for="new-user-username">Username</label><input id="new-user-username" @bind="newUserName" autocomplete="off" /></div>
-            <div class="form-field"><label for="new-user-password">Initial password</label><input id="new-user-password" type="password" @bind="newUserPassword" autocomplete="new-password" /></div>
+            <div class="form-field"><label for="new-user-name">Name</label><input id="new-user-name" @bind="newUserDisplayName" @bind:event="oninput" autocomplete="off" /></div>
+            <div class="form-field"><label for="new-user-username">Username</label><input id="new-user-username" @bind="newUserName" @bind:event="oninput" autocomplete="off" /></div>
+            <div class="form-field"><label for="new-user-password">Initial password</label><input id="new-user-password" type="password" @bind="newUserPassword" @bind:event="oninput" autocomplete="new-password" /></div>
         </div>
         <button class="button button-outline" type="button" @onclick="CreateUserAsync">Create account and add <span>↗</span></button>
     </details>

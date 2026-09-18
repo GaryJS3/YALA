@@ -27,10 +27,10 @@
         <div class="edit-panel">
             <div class="section-heading"><h2>@(editId is null ? "A new regular" : "Edit this item")</h2><button class="text-button" type="button" @onclick="CancelEdit">Close ×</button></div>
             <div class="form-grid">
-                <div class="form-field"><label for="item-name">Friendly name</label><input id="item-name" @bind="editName" maxlength="120" placeholder="Whole milk" /></div>
+                <div class="form-field"><label for="item-name">Friendly name</label><input id="item-name" @bind="editName" @bind:event="oninput" maxlength="120" placeholder="Whole milk" /></div>
                 <div class="form-field"><label for="item-category">Category</label><select id="item-category" value="@editCategoryId" @onchange="CategoryChanged"><option value="">No category</option>@foreach (var category in categories) { <option value="@category.Id">@category.Name</option> }</select></div>
-                <div class="form-field"><label for="item-description">Description (optional)</label><input id="item-description" @bind="editDescription" placeholder="1 gallon" /></div>
-                <div class="form-field"><label for="item-quantity">Default quantity</label><input id="item-quantity" type="number" min="0.25" step="0.25" @bind="editQuantity" /></div>
+                <div class="form-field"><label for="item-description">Description (optional)</label><input id="item-description" @bind="editDescription" @bind:event="oninput" placeholder="1 gallon" /></div>
+                <div class="form-field"><label for="item-quantity">Default quantity</label><input id="item-quantity" type="number" min="0.25" step="0.25" @bind="editQuantity" @bind:event="oninput" /></div>
             </div>
             @if (!string.IsNullOrWhiteSpace(error)) { <p class="notice error">@error</p> }
             <button type="button" class="button button-primary" @onclick="SaveAsync">Save item <span>↗</span></button>
@@ -72,7 +72,7 @@
                                 }
                                 @if (details.Aliases.Count == 0) { <span class="detail-empty">No aliases yet.</span> }
                             </div>
-                            <div class="detail-inline-form"><input @bind="aliasInput" placeholder="e.g. Kitty food" aria-label="New item alias" /><button type="button" class="button button-outline" @onclick="AddAliasAsync">Add alias <span>+</span></button></div>
+                            <div class="detail-inline-form"><input @bind="aliasInput" @bind:event="oninput" placeholder="e.g. Kitty food" aria-label="New item alias" /><button type="button" class="button button-outline" @onclick="AddAliasAsync">Add alias <span>+</span></button></div>
                         </div>
                         <div class="detail-block">
                             <h3>Exact products <span>Optional brands, sizes, and barcodes</span></h3>
@@ -97,10 +97,10 @@
                             @if (details.Variants.Count == 0) { <p class="detail-empty">Add an exact product if the brand matters. Generic items work just as well.</p> }
                             <div class="variant-entry">
                                 <div class="form-grid">
-                                    <div class="form-field"><label>Product name</label><input @bind="variantName" placeholder="Purina ONE Indoor Advantage" /></div>
-                                    <div class="form-field"><label>Brand</label><input @bind="variantBrand" placeholder="Purina ONE" /></div>
-                                    <div class="form-field"><label>Size</label><input @bind="variantSize" placeholder="16 lb" /></div>
-                                    <div class="form-field"><label>Barcode (optional)</label><input @bind="variantBarcode" inputmode="numeric" placeholder="017800123456" /></div>
+                                    <div class="form-field"><label>Product name</label><input @bind="variantName" @bind:event="oninput" placeholder="Purina ONE Indoor Advantage" /></div>
+                                    <div class="form-field"><label>Brand</label><input @bind="variantBrand" @bind:event="oninput" placeholder="Purina ONE" /></div>
+                                    <div class="form-field"><label>Size</label><input @bind="variantSize" @bind:event="oninput" placeholder="16 lb" /></div>
+                                    <div class="form-field"><label>Barcode (optional)</label><input @bind="variantBarcode" @bind:event="oninput" inputmode="numeric" placeholder="017800123456" /></div>
                                 </div>
                                 <label class="preferred-checkbox"><input type="checkbox" @bind="variantPreferred" /> Preferred product</label>
                                 <button type="button" class="button button-outline" @onclick="AddVariantAsync">Add exact product <span>+</span></button>
