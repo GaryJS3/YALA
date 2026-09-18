@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/YALA/YALA.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/YALA.Tests/YALA.Tests.csproj" />
+  </Folder>
+</Solution>

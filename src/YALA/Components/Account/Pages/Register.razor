@@ -1,0 +1,128 @@
+@page "/Account/Register"
+@attribute [AllowAnonymous]
+@layout SetupLayout
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@using YALA.Data
+@using YALA.Data.Entities
+
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Set up YALA</PageTitle>
+
+<section class="setup-wrap">
+    <div class="setup-aside">
+        <a class="brand setup-brand" href="/"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span><span>YALA</span></a>
+        <p class="eyebrow">YOUR HOME BASE FOR GROCERIES</p>
+        <h1>A little less<br /><em>“did we get…”</em></h1>
+        <p>Your list stays with your household, and the things you buy often are always ready to add again.</p>
+        <div class="setup-sticker">One shared list.<br />A calmer shop.</div>
+    </div>
+    <div class="setup-card">
+        @if (alreadyConfigured)
+        {
+            <p class="eyebrow">YALA IS ALREADY SET UP</p>
+            <h2>Welcome back.</h2>
+            <p class="muted-copy">New accounts are created from Household settings by someone who already belongs to a list.</p>
+            <a class="button button-primary" href="/Account/Login">Log in <span>↗</span></a>
+        }
+        else
+        {
+            <p class="eyebrow">FIRST-RUN SETUP</p>
+            <h2>Start your household list.</h2>
+            <p class="muted-copy">Create the first local account. This private YALA instance won’t have open registration.</p>
+            <StatusMessage Message="@errorMessage" />
+            <EditForm Model="input" method="post" OnValidSubmit="CreateFirstUserAsync" FormName="first-run">
+                <DataAnnotationsValidator />
+                <div class="form-field">
+                    <label for="display-name">Your name</label>
+                    <InputText id="display-name" @bind-Value="input.DisplayName" autocomplete="name" placeholder="Gary" />
+                    <ValidationMessage For="() => input.DisplayName" />
+                </div>
+                <div class="form-field">
+                    <label for="username">Username</label>
+                    <InputText id="username" @bind-Value="input.UserName" autocomplete="username" placeholder="gary" />
+                    <ValidationMessage For="() => input.UserName" />
+                </div>
+                <div class="form-field">
+                    <label for="password">Password</label>
+                    <InputText id="password" type="password" @bind-Value="input.Password" autocomplete="new-password" placeholder="At least 8 characters" />
+                    <ValidationMessage For="() => input.Password" />
+                </div>
+                <div class="form-field">
+                    <label for="household-name">First household</label>
+                    <InputText id="household-name" @bind-Value="input.HouseholdName" placeholder="GJ's House" />
+                    <ValidationMessage For="() => input.HouseholdName" />
+                </div>
+                <button class="button button-primary setup-submit" type="submit">Create my list <span>↗</span></button>
+            </EditForm>
+            <p class="setup-footnote"><span>⌑</span> Your data lives in your own YALA database.</p>
+        }
+    </div>
+</section>
+
+@code {
+    [SupplyParameterFromForm] private SetupInput input { get; set; } = default!;
+    private bool alreadyConfigured;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        input ??= new();
+        alreadyConfigured = await UserManager.Users.AnyAsync();
+    }
+
+    private async Task CreateFirstUserAsync()
+    {
+        if (await UserManager.Users.AnyAsync())
+        {
+            alreadyConfigured = true;
+            return;
+        }
+
+        var user = new ApplicationUser { UserName = input.UserName.Trim(), DisplayName = input.DisplayName.Trim() };
+        var result = await UserManager.CreateAsync(user, input.Password);
+        if (!result.Succeeded)
+        {
+            errorMessage = string.Join(" ", result.Errors.Select(x => x.Description));
+            return;
+        }
+
+        var household = new Household { Name = input.HouseholdName.Trim() };
+        user.DefaultHouseholdId = household.Id;
+        await UserManager.UpdateAsync(user);
+        await using (var db = await DbFactory.CreateDbContextAsync())
+        {
+            db.Households.Add(household);
+            db.HouseholdMembers.Add(new HouseholdMember { HouseholdId = household.Id, UserId = user.Id });
+            for (var index = 0; index < HouseholdService.DefaultCategories.Length; index++)
+            {
+                db.Categories.Add(new Category { HouseholdId = household.Id, Name = HouseholdService.DefaultCategories[index], SortOrder = index });
+            }
+            await db.SaveChangesAsync();
+        }
+
+        await SignInManager.SignInAsync(user, isPersistent: true);
+        RedirectManager.RedirectTo("/");
+    }
+
+    private sealed class SetupInput
+    {
+        [Required, StringLength(80, MinimumLength = 1)]
+        public string DisplayName { get; set; } = string.Empty;
+
+        [Required, StringLength(40, MinimumLength = 2), RegularExpression(@"^[a-zA-Z0-9_.-]+$", ErrorMessage = "Use letters, numbers, dots, dashes, and underscores.")]
+        public string UserName { get; set; } = string.Empty;
+
+        [Required, StringLength(100, MinimumLength = 8)]
+        public string Password { get; set; } = string.Empty;
+
+        [Required, StringLength(80, MinimumLength = 2)]
+        public string HouseholdName { get; set; } = string.Empty;
+    }
+}

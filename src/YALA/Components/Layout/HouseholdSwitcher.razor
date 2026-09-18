@@ -1,0 +1,52 @@
+@implements IDisposable
+@inject HouseholdService HouseholdService
+@inject NavigationManager NavigationManager
+
+@if (households.Count > 0)
+{
+    <label class="household-switcher">
+        <span class="switcher-caption">CURRENT LIST</span>
+        <select aria-label="Current household" value="@currentId" @onchange="SwitchHouseholdAsync">
+            @foreach (var household in households)
+            {
+                <option value="@household.Id">@household.Name</option>
+            }
+        </select>
+        <span class="switcher-chevron" aria-hidden="true">⌄</span>
+    </label>
+}
+else
+{
+    <a class="household-switcher new-household-shortcut" href="/households"><span class="switcher-caption">CURRENT LIST</span><span>Create your first household</span><span class="switcher-chevron">↗</span></a>
+}
+
+@code {
+    private IReadOnlyList<HouseholdChoice> households = [];
+    private string currentId = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        HouseholdService.CurrentHouseholdChanged += OnHouseholdChanged;
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        households = await HouseholdService.GetHouseholdsAsync();
+        var current = await HouseholdService.GetCurrentAsync();
+        currentId = current?.HouseholdId.ToString() ?? string.Empty;
+    }
+
+    private void OnHouseholdChanged() => _ = InvokeAsync(async () => { await ReloadAsync(); StateHasChanged(); });
+
+    private async Task SwitchHouseholdAsync(ChangeEventArgs args)
+    {
+        if (Guid.TryParse(args.Value?.ToString(), out var householdId) && await HouseholdService.SwitchAsync(householdId))
+        {
+            currentId = householdId.ToString();
+            NavigationManager.NavigateTo("/", replace: true);
+        }
+    }
+
+    public void Dispose() => HouseholdService.CurrentHouseholdChanged -= OnHouseholdChanged;
+}

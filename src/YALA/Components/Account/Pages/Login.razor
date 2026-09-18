@@ -1,0 +1,86 @@
+@page "/Account/Login"
+@attribute [AllowAnonymous]
+@layout SetupLayout
+
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Authentication
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@using YALA.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+@inject IdentityRedirectManager RedirectManager
+
+<PageTitle>Log in · YALA</PageTitle>
+
+<section class="login-shell">
+    <a class="brand" href="/"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span><span>YALA</span></a>
+    <p class="eyebrow">YOUR LIST IS WAITING</p>
+    <h1>Good to have<br />you back.</h1>
+    <StatusMessage Message="@errorMessage" />
+    <EditForm EditContext="editContext" method="post" OnSubmit="LoginUserAsync" FormName="login">
+        <DataAnnotationsValidator />
+        <div class="form-field">
+            <label for="username">Username</label>
+            <InputText @bind-Value="Input.UserName" id="username" autocomplete="username" placeholder="Your username" />
+            <ValidationMessage For="() => Input.UserName" />
+        </div>
+        <div class="form-field">
+            <label for="password">Password</label>
+            <InputText type="password" @bind-Value="Input.Password" id="password" autocomplete="current-password" placeholder="Your password" />
+            <ValidationMessage For="() => Input.Password" />
+        </div>
+        <label class="remember-row"><InputCheckbox @bind-Value="Input.RememberMe" /> Keep me signed in</label>
+        <button type="submit" class="button button-primary setup-submit">Log in <span>↗</span></button>
+    </EditForm>
+    @if (!hasUsers)
+    {
+        <p class="login-first-run"><a href="/Account/Register">Set up this YALA instance</a></p>
+    }
+</section>
+
+@code {
+    private string? errorMessage;
+    private bool hasUsers;
+    private EditContext editContext = default!;
+
+    [CascadingParameter] private HttpContext HttpContext { get; set; } = default!;
+    [SupplyParameterFromForm] private LoginInput Input { get; set; } = default!;
+    [SupplyParameterFromQuery] private string? ReturnUrl { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Input ??= new();
+        editContext = new EditContext(Input);
+        hasUsers = await UserManager.Users.AnyAsync();
+        if (HttpMethods.IsGet(HttpContext.Request.Method))
+        {
+            await HttpContext.SignOutAsync(IdentityConstants.ExternalScheme);
+        }
+    }
+
+    private async Task LoginUserAsync()
+    {
+        if (!editContext.Validate()) return;
+        var result = await SignInManager.PasswordSignInAsync(Input.UserName, Input.Password, Input.RememberMe, lockoutOnFailure: false);
+        if (result.Succeeded)
+        {
+            RedirectManager.RedirectTo(ReturnUrl);
+            return;
+        }
+
+        errorMessage = result.IsLockedOut ? "This account is temporarily locked. Try again later." : "That username and password did not match.";
+    }
+
+    private sealed class LoginInput
+    {
+        [Required]
+        public string UserName { get; set; } = string.Empty;
+
+        [Required, DataType(DataType.Password)]
+        public string Password { get; set; } = string.Empty;
+
+        public bool RememberMe { get; set; }
+    }
+}

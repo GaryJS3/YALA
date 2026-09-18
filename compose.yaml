@@ -1,0 +1,35 @@
+services:
+  yala:
+    build:
+      context: .
+      no_cache: true
+    image: yala:local
+    pull_policy: build
+    container_name: yala
+    restart: unless-stopped
+    init: true
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      YALA_DATA_DIR: /data
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - yala-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 3s
+      start_period: 15s
+      retries: 3
+
+volumes:
+  yala-data:
+    name: yala-data

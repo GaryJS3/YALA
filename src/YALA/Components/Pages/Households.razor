@@ -1,0 +1,262 @@
+@page "/households"
+@attribute [Authorize]
+@inject HouseholdService HouseholdService
+@inject UserManager<ApplicationUser> UserManager
+
+<PageTitle>Households · YALA</PageTitle>
+
+<section class="page-heading">
+    <div>
+        <p class="eyebrow">YOUR LISTS, YOUR PEOPLE</p>
+        <h1>Households</h1>
+        <p class="heading-subtitle">Each home gets its own catalog, stores, and grocery list.</p>
+    </div>
+</section>
+
+@if (current is not null)
+{
+    <section class="household-settings-card content-card">
+        <div class="household-card-heading">
+            <div class="household-emblem" aria-hidden="true">⌂</div>
+            <div><p class="eyebrow">CURRENT HOUSEHOLD</p><h2>@current.HouseholdName</h2></div>
+            @if (households.FirstOrDefault(x => x.Id == current.HouseholdId)?.IsDefault == true) { <span class="default-badge">Your default</span> }
+        </div>
+        <div class="members-heading"><h3>People with access</h3><span>@members.Count</span></div>
+        <div class="member-list">
+            @foreach (var member in members)
+            {
+                <div class="member-row"><span class="member-avatar">@FirstLetter(member.DisplayName)</span><span class="member-name">@member.DisplayName</span><span class="member-username">@member.UserName</span>
+                    @if (members.Count > 1)
+                    {
+                        <button type="button" class="text-button remove-member" @onclick="() => RemoveMemberAsync(member)">Remove</button>
+                    }
+                </div>
+            }
+        </div>
+        <div class="member-add">
+            <div class="form-field"><label for="member-username">Add an existing YALA user</label><select id="member-username" @bind="memberUserName"><option value="">Choose a username</option>@foreach (var username in availableUserNames) { <option value="@username">@username</option> }</select></div>
+            <button type="button" class="button button-outline" @onclick="AddMemberAsync" disabled="@(string.IsNullOrWhiteSpace(memberUserName))">Add person <span>+</span></button>
+        </div>
+    </section>
+
+    <section class="content-card household-preferences">
+        <div class="section-heading"><div><p class="eyebrow">HOUSEHOLD SETTINGS</p><h2>Name and categories</h2></div></div>
+        <div class="inline-form">
+            <div class="form-field"><label for="household-name">Household name</label><input id="household-name" class="search-field" @bind="householdName" maxlength="80" /></div>
+            <button type="button" class="button button-outline" @onclick="RenameHouseholdAsync">Save name</button>
+        </div>
+        <div class="members-heading"><h3>Categories</h3><span>@categories.Count</span></div>
+        <div class="inline-form category-add-form">
+            <div class="form-field"><label for="category-name">@(editingCategoryId is null ? "Add a category" : "Rename category")</label><input id="category-name" class="search-field" @bind="categoryName" maxlength="60" /></div>
+            <button type="button" class="button button-outline" @onclick="SaveCategoryAsync">@(editingCategoryId is null ? "Add category" : "Save category")</button>
+            @if (editingCategoryId is not null) { <button type="button" class="text-button" @onclick="CancelCategoryEdit">Cancel</button> }
+        </div>
+        <div class="category-settings-list">
+            @foreach (var category in categories)
+            {
+                <div class="category-settings-row"><span>@category.Name</span><div class="category-settings-actions">
+                    <button class="icon-button" type="button" aria-label="Move @category.Name up" disabled="@(category.SortOrder == categories.Min(x => x.SortOrder))" @onclick="() => MoveCategoryAsync(category.Id, -1)">↑</button>
+                    <button class="icon-button" type="button" aria-label="Move @category.Name down" disabled="@(category.SortOrder == categories.Max(x => x.SortOrder))" @onclick="() => MoveCategoryAsync(category.Id, 1)">↓</button>
+                    <button class="text-button" type="button" @onclick="() => BeginCategoryEdit(category)">Rename</button>
+                    <button class="text-button" type="button" @onclick="() => DeleteCategoryAsync(category)">Remove</button>
+                </div></div>
+            }
+        </div>
+        <div class="archive-household-row">
+            @if (!confirmArchive)
+            {
+                <div><strong>Archive this household</strong><p class="muted-copy">Its list and history are kept. You can restore it later.</p></div>
+                <button class="button button-outline" type="button" @onclick="() => confirmArchive = true">Archive household</button>
+            }
+            else
+            {
+                <div><strong>Archive @current.HouseholdName?</strong><p class="muted-copy">Members will lose access until someone restores it.</p></div>
+                <div class="category-settings-actions"><button class="text-button" type="button" @onclick="() => confirmArchive = false">Cancel</button><button class="button button-primary" type="button" @onclick="ArchiveHouseholdAsync">Confirm archive</button></div>
+            }
+        </div>
+    </section>
+}
+
+@if (!string.IsNullOrWhiteSpace(message)) { <p class="notice">@message</p> }
+@if (!string.IsNullOrWhiteSpace(error)) { <p class="notice error">@error</p> }
+
+<div class="section-heading"><h2>Other households</h2></div>
+<section class="household-grid">
+    @foreach (var option in households.Where(x => x.Id != current?.HouseholdId))
+    {
+        <article class="household-card content-card">
+            <div class="household-card-top"><div class="household-emblem small-emblem" aria-hidden="true">⌂</div><div><h3>@option.Name</h3>@if (option.IsDefault) { <span class="default-badge">Your default</span> }</div></div>
+            <div class="household-card-actions">
+                <button type="button" class="button button-primary" @onclick="() => SwitchAsync(option.Id)">Open list <span>↗</span></button>
+                @if (!option.IsDefault) { <button type="button" class="quiet-link" @onclick="() => MakeDefaultAsync(option.Id)">Make default</button> }
+            </div>
+        </article>
+    }
+</section>
+
+@if (archivedHouseholds.Count > 0)
+{
+    <div class="section-heading"><h2>Archived households</h2></div>
+    <section class="household-grid">
+        @foreach (var archived in archivedHouseholds)
+        {
+            <article class="household-card content-card">
+                <div class="household-card-top"><div class="household-emblem small-emblem" aria-hidden="true">⌂</div><div><h3>@archived.Name</h3><span class="badge">Archived</span></div></div>
+                <div class="household-card-actions"><button type="button" class="button button-outline" @onclick="() => RestoreHouseholdAsync(archived.Id)">Restore household <span>↗</span></button></div>
+            </article>
+        }
+    </section>
+}
+
+<section class="content-card create-household-panel">
+    <p class="eyebrow">A DIFFERENT HOUSE, A DIFFERENT LIST</p>
+    <h2>Create a household</h2>
+    <p class="muted-copy">New households start fresh. Nothing from your other lists is copied.</p>
+    <div class="inline-form"><input class="search-field" @bind="newHouseholdName" placeholder="e.g. Parents' House" aria-label="New household name" /><button class="button button-outline" type="button" @onclick="CreateHouseholdAsync">Create household <span>+</span></button></div>
+</section>
+
+<section class="content-card create-user-panel">
+    <details>
+        <summary><span class="eyebrow">INVITE SOMEONE WITHOUT EMAIL</span><strong>Create a local YALA account</strong><span class="details-plus">+</span></summary>
+        <p class="muted-copy">Create a username and initial password, then give them access to this household.</p>
+        <div class="form-grid">
+            <div class="form-field"><label for="new-user-name">Name</label><input id="new-user-name" @bind="newUserDisplayName" autocomplete="off" /></div>
+            <div class="form-field"><label for="new-user-username">Username</label><input id="new-user-username" @bind="newUserName" autocomplete="off" /></div>
+            <div class="form-field"><label for="new-user-password">Initial password</label><input id="new-user-password" type="password" @bind="newUserPassword" autocomplete="new-password" /></div>
+        </div>
+        <button class="button button-outline" type="button" @onclick="CreateUserAsync">Create account and add <span>↗</span></button>
+    </details>
+</section>
+
+@code {
+    private IReadOnlyList<HouseholdChoice> households = [];
+    private IReadOnlyList<HouseholdMemberChoice> members = [];
+    private IReadOnlyList<string> availableUserNames = [];
+    private IReadOnlyList<HouseholdChoice> archivedHouseholds = [];
+    private IReadOnlyList<HouseholdCategory> categories = [];
+    private CurrentHouseholdContext? current;
+    private string householdName = string.Empty;
+    private string categoryName = string.Empty;
+    private Guid? editingCategoryId;
+    private bool confirmArchive;
+    private string newHouseholdName = string.Empty;
+    private string memberUserName = string.Empty;
+    private string newUserDisplayName = string.Empty;
+    private string newUserName = string.Empty;
+    private string newUserPassword = string.Empty;
+    private string? message;
+    private string? error;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        households = await HouseholdService.GetHouseholdsAsync();
+        current = await HouseholdService.GetCurrentAsync();
+        members = current is null ? [] : await HouseholdService.GetMemberChoicesAsync();
+        availableUserNames = current is null ? [] : await HouseholdService.GetAvailableUserNamesAsync();
+        archivedHouseholds = await HouseholdService.GetArchivedHouseholdsAsync();
+        categories = current is null ? [] : await HouseholdService.GetCategoriesAsync();
+        householdName = current?.HouseholdName ?? string.Empty;
+        if (current is null) { confirmArchive = false; editingCategoryId = null; categoryName = string.Empty; }
+    }
+
+    private async Task SwitchAsync(Guid id)
+    {
+        if (await HouseholdService.SwitchAsync(id)) { message = "Household switched."; await LoadAsync(); }
+    }
+
+    private async Task MakeDefaultAsync(Guid id)
+    {
+        if (await HouseholdService.MakeDefaultAsync(id)) { message = "Your default household has been updated."; await LoadAsync(); }
+    }
+
+    private async Task RenameHouseholdAsync()
+    {
+        try { await HouseholdService.RenameCurrentAsync(householdName); error = null; message = "Household name saved."; await LoadAsync(); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or DbUpdateException) { error = ex.Message; }
+    }
+
+    private async Task SaveCategoryAsync()
+    {
+        try
+        {
+            await HouseholdService.SaveCategoryAsync(editingCategoryId, categoryName);
+            categoryName = string.Empty; editingCategoryId = null; error = null; message = "Category saved."; await LoadAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or DbUpdateException) { error = ex.Message; }
+    }
+
+    private void BeginCategoryEdit(HouseholdCategory category) { editingCategoryId = category.Id; categoryName = category.Name; }
+    private void CancelCategoryEdit() { editingCategoryId = null; categoryName = string.Empty; }
+
+    private async Task DeleteCategoryAsync(HouseholdCategory category)
+    {
+        try { await HouseholdService.DeleteCategoryAsync(category.Id); error = null; message = $"{category.Name} removed. Items in it are uncategorized."; await LoadAsync(); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or DbUpdateException) { error = ex.Message; }
+    }
+
+    private async Task MoveCategoryAsync(Guid id, int direction)
+    {
+        await HouseholdService.MoveCategoryAsync(id, direction); await LoadAsync();
+    }
+
+    private async Task ArchiveHouseholdAsync()
+    {
+        try { await HouseholdService.ArchiveCurrentAsync(); error = null; message = "Household archived. You can restore it below."; confirmArchive = false; await LoadAsync(); }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or DbUpdateException) { error = ex.Message; }
+    }
+
+    private async Task RestoreHouseholdAsync(Guid id)
+    {
+        if (await HouseholdService.RestoreHouseholdAsync(id)) { error = null; message = "Household restored."; await LoadAsync(); }
+    }
+
+    private async Task CreateHouseholdAsync()
+    {
+        try
+        {
+            await HouseholdService.CreateAsync(newHouseholdName);
+            newHouseholdName = string.Empty; error = null; message = "Your new household is ready."; await LoadAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or DbUpdateException) { error = ex.Message; }
+    }
+
+    private async Task AddMemberAsync()
+    {
+        try
+        {
+            await HouseholdService.AddMemberAsync(memberUserName); memberUserName = string.Empty; error = null; message = "Person added to this household."; await LoadAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or DbUpdateException) { error = ex.Message; }
+    }
+
+    private async Task RemoveMemberAsync(HouseholdMemberChoice member)
+    {
+        try
+        {
+            await HouseholdService.RemoveMemberAsync(member.UserId); error = null; message = $"{member.DisplayName} no longer has access to this household."; await LoadAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or DbUpdateException) { error = ex.Message; }
+    }
+
+    private async Task CreateUserAsync()
+    {
+        var username = newUserName.Trim();
+        if (current is null || username.Length < 2 || newUserDisplayName.Trim().Length < 1 || newUserPassword.Length < 8)
+        { error = "Enter a name, username, and password of at least 8 characters."; return; }
+
+        var user = new ApplicationUser { UserName = username, DisplayName = newUserDisplayName.Trim() };
+        var result = await UserManager.CreateAsync(user, newUserPassword);
+        if (!result.Succeeded) { error = string.Join(" ", result.Errors.Select(x => x.Description)); return; }
+        try
+        {
+            await HouseholdService.AddMemberAsync(username);
+            newUserName = string.Empty; newUserDisplayName = string.Empty; newUserPassword = string.Empty;
+            error = null; message = "Account created and added to this household."; await LoadAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or DbUpdateException) { error = ex.Message; }
+    }
+
+    private static string FirstLetter(string value) => string.IsNullOrWhiteSpace(value) ? "?" : value[..1].ToUpperInvariant();
+}

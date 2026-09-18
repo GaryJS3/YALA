@@ -1,0 +1,63 @@
+@using YALA.Services
+
+<article class="grocery-row @(Item.IsChecked ? "is-checked" : "")">
+    <button type="button" class="check-control" aria-label="@(Item.IsChecked ? "Mark " + Item.Name + " not done" : "Mark " + Item.Name + " done")" @onclick="() => OnToggle.InvokeAsync(Item.Id)">
+        @if (Item.IsChecked) { <span>✓</span> }
+    </button>
+    @if (!string.IsNullOrWhiteSpace(Item.ImagePath))
+    {
+        <img class="grocery-thumb" src="/images/@Item.ImagePath" alt="" loading="lazy" />
+    }
+    <div class="grocery-main">
+        <div class="grocery-name-line">
+            <span class="grocery-name">@Item.Name</span>
+            @if (Item.IsFavorite) { <span class="favorite-star" aria-label="Favorite">★</span> }
+        </div>
+        @if (!string.IsNullOrWhiteSpace(Item.Description))
+        {
+            <span class="grocery-description">@Item.Description</span>
+        }
+        @if (ShowPrices && Item.StorePrices.Count > 0)
+        {
+            <div class="store-price-list">
+                @foreach (var offer in Item.StorePrices)
+                {
+                    <span>@offer.StoreName @if (offer.IsPreferred) { <i class="preferred-store-mark">Preferred</i> } <b>@(offer.Price is decimal price ? price.ToString("C") : "—")</b></span>
+                }
+            </div>
+        }
+    </div>
+    <div class="row-end-controls">
+        @if (Stores.Count > 0)
+        {
+            <select class="assignment-select" aria-label="Store for @Item.Name" value="@(Item.AssignedStoreId?.ToString() ?? "")" @onchange="AssignChangedAsync">
+                <option value="">Store…</option>
+                @foreach (var store in Stores)
+                {
+                    <option value="@store.Id">@store.Name</option>
+                }
+            </select>
+        }
+        <div class="quantity-control" aria-label="Quantity">
+            <button type="button" aria-label="Decrease @Item.Name quantity" @onclick="() => OnQuantity.InvokeAsync((Item.Id, -1m))">−</button>
+            <span>@FormatQuantity(Item.Quantity)</span>
+            <button type="button" aria-label="Increase @Item.Name quantity" @onclick="() => OnQuantity.InvokeAsync((Item.Id, 1m))">+</button>
+        </div>
+        <button class="remove-item" type="button" aria-label="Remove @Item.Name" @onclick="() => OnRemove.InvokeAsync(Item.Id)">×</button>
+    </div>
+</article>
+
+@code {
+    [Parameter, EditorRequired] public ShoppingListRow Item { get; set; } = default!;
+    [Parameter] public IReadOnlyList<Store> Stores { get; set; } = [];
+    [Parameter] public bool ShowPrices { get; set; }
+    [Parameter] public EventCallback<Guid> OnToggle { get; set; }
+    [Parameter] public EventCallback<(Guid Id, decimal Delta)> OnQuantity { get; set; }
+    [Parameter] public EventCallback<Guid> OnRemove { get; set; }
+    [Parameter] public EventCallback<(Guid Id, Guid? StoreId)> OnAssign { get; set; }
+
+    private Task AssignChangedAsync(ChangeEventArgs args) =>
+        OnAssign.InvokeAsync((Item.Id, Guid.TryParse(args.Value?.ToString(), out var id) ? id : null));
+
+    private static string FormatQuantity(decimal quantity) => quantity.ToString("0.##");
+}

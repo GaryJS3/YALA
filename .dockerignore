@@ -1,0 +1,11 @@
+.git
+.vs
+.vscode
+.config
+**/bin/
+**/obj/
+**/TestResults/
+tests/
+backups/
+src/YALA/Data/*.db*
+README.md
