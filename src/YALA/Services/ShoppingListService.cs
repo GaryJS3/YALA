@@ -62,6 +62,8 @@ public sealed class ShoppingListService(
                 x.Name,
                 x.Brand,
                 x.Size,
+                x.ImagePath,
+                x.IsPreferred,
                 StoreNames = db.StoreOffers.Where(o => o.HouseholdId == household.HouseholdId && o.ProductVariantId == x.Id && o.IsAvailable && o.Store.IsActive)
                     .OrderBy(o => o.Store.SortOrder).ThenBy(o => o.Store.Name).Select(o => o.Store.Name).ToArray()
             })
@@ -73,7 +75,11 @@ public sealed class ShoppingListService(
             CatalogItemId = row.CatalogItemId,
             Name = row.CatalogItem?.Name ?? row.CustomName ?? "Unnamed item",
             Description = row.CatalogItem?.Description,
-            ImagePath = row.CatalogItem?.ImagePath,
+            ImagePath = row.CatalogItem?.ImagePath ?? (row.CatalogItemId is Guid imageItemId
+                ? variants.Where(x => x.CatalogItemId == imageItemId && !string.IsNullOrWhiteSpace(x.ImagePath))
+                    .OrderByDescending(x => x.IsPreferred).ThenBy(x => x.Name)
+                    .Select(x => x.ImagePath).FirstOrDefault()
+                : null),
             Quantity = row.Quantity,
             IsChecked = row.IsChecked,
             IsFavorite = row.CatalogItem?.IsFavorite ?? false,

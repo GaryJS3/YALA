@@ -118,8 +118,12 @@ public sealed class CatalogService(IDbContextFactory<ApplicationDbContext> dbCon
                 && x.ProductVariantId != null && x.IsAvailable)
             .Select(x => new { VariantId = x.ProductVariantId!.Value, x.StoreId })
             .ToListAsync(cancellationToken);
+        var displayImagePath = item.ImagePath ?? item.Variants
+            .Where(x => !x.IsArchived && !string.IsNullOrWhiteSpace(x.ImagePath))
+            .OrderByDescending(x => x.IsPreferred).ThenBy(x => x.Name)
+            .Select(x => x.ImagePath).FirstOrDefault();
         return new CatalogDetails(item.Id, item.Name, item.Description, item.CategoryId, categoryName, item.DefaultQuantity,
-            item.IsFavorite, item.IsArchived, item.ImagePath,
+            item.IsFavorite, item.IsArchived, displayImagePath,
             item.Aliases.OrderBy(x => x.Alias).Select(x => new CatalogAliasEntry(x.Id, x.Alias)).ToArray(),
             item.Variants.Where(x => !x.IsArchived).OrderByDescending(x => x.IsPreferred).ThenBy(x => x.Name)
                 .Select(x => new ProductVariantEntry(x.Id, x.Name, x.Brand, x.Size, x.ImagePath, x.IsPreferred,

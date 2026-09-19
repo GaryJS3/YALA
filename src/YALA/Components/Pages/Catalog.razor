@@ -26,7 +26,7 @@
                 @foreach (var item in adHocItems)
                 {
                     <div class="ad-hoc-catalog-row">
-                        <div><strong>@item.Name</strong><small>@item.Quantity.ToString("0.##") qty@if (!string.IsNullOrWhiteSpace(item.StoreName)) { <text> · @item.StoreName</text> }</small></div>
+                        <div><strong>@item.Name</strong><small>@($"{item.Quantity:0.##} qty{(string.IsNullOrWhiteSpace(item.StoreName) ? string.Empty : $" · {item.StoreName}")}")</small></div>
                         <div class="ad-hoc-catalog-actions">
                             @if (pendingDeleteId == item.ShoppingListItemId)
                             {

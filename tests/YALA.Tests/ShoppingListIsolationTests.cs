@@ -235,6 +235,38 @@ public sealed class ShoppingListIsolationTests
     }
 
     [Fact]
+    public async Task ItemAndShoppingListUsePreferredProductImageWhenItemHasNone()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+        var (_, item) = await fixture.SeedSingleHouseholdAsync();
+        await using (var db = fixture.CreateDbContext())
+        {
+            db.ProductVariants.AddRange(
+                new ProductVariant { HouseholdId = item.HouseholdId, CatalogItemId = item.Id, Name = "Other milk", ImagePath = "households/example/variants/other.jpg" },
+                new ProductVariant { HouseholdId = item.HouseholdId, CatalogItemId = item.Id, Name = "Preferred milk", ImagePath = "households/example/variants/preferred.jpg", IsPreferred = true });
+            await db.SaveChangesAsync();
+        }
+
+        var householdService = fixture.CreateHouseholdService("gary");
+        var catalogService = fixture.CreateCatalogService(householdService);
+        var listService = fixture.CreateShoppingListService(householdService);
+
+        Assert.Equal("households/example/variants/preferred.jpg", (await catalogService.GetDetailsAsync(item.Id))!.ImagePath);
+        await listService.AddAsync(item.Id);
+        Assert.Equal("households/example/variants/preferred.jpg", Assert.Single(await listService.GetRowsAsync()).ImagePath);
+
+        await using (var db = fixture.CreateDbContext())
+        {
+            var storedItem = await db.CatalogItems.SingleAsync(x => x.Id == item.Id);
+            storedItem.ImagePath = "households/example/items/item.jpg";
+            await db.SaveChangesAsync();
+        }
+
+        Assert.Equal("households/example/items/item.jpg", (await catalogService.GetDetailsAsync(item.Id))!.ImagePath);
+        Assert.Equal("households/example/items/item.jpg", Assert.Single(await listService.GetRowsAsync()).ImagePath);
+    }
+
+    [Fact]
     public async Task ExactProductsCanBeAssignedToMultipleStoresAndAvailabilityPreservesOfferData()
     {
         await using var fixture = await TestFixture.CreateAsync();
