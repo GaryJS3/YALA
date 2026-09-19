@@ -76,10 +76,10 @@ public sealed class CatalogService(IDbContextFactory<ApplicationDbContext> dbCon
             items = items.Where(x => x.Name.ToLower().Contains(term)
                 || (x.Description != null && x.Description.ToLower().Contains(term))
                 || x.Aliases.Any(a => a.Alias.ToLower().Contains(term))
-                || x.Variants.Any(v => v.Name.ToLower().Contains(term)
+                || x.Variants.Any(v => !v.IsArchived && (v.Name.ToLower().Contains(term)
                     || (v.Brand != null && v.Brand.ToLower().Contains(term))
                     || (v.Size != null && v.Size.ToLower().Contains(term))
-                    || v.Barcodes.Any(b => b.Barcode == query.Trim())));
+                    || v.Barcodes.Any(b => b.Barcode == query.Trim()))));
         }
 
         return await items.OrderBy(x => x.IsArchived).ThenBy(x => x.Category == null ? int.MaxValue : x.Category.SortOrder).ThenBy(x => x.Name)
@@ -234,6 +234,29 @@ public sealed class CatalogService(IDbContextFactory<ApplicationDbContext> dbCon
         }
         offer.IsAvailable = isAvailable;
         offer.UpdatedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+        notifier.Notify(household.HouseholdId);
+    }
+
+    public async Task RemoveVariantAsync(Guid variantId, CancellationToken cancellationToken = default)
+    {
+        var household = await RequireHouseholdAsync(cancellationToken);
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var variant = await db.ProductVariants.SingleOrDefaultAsync(
+            x => x.Id == variantId && x.HouseholdId == household.HouseholdId && !x.IsArchived,
+            cancellationToken) ?? throw new InvalidOperationException("That product is not in this household.");
+
+        variant.IsArchived = true;
+        variant.IsPreferred = false;
+        var offers = await db.StoreOffers.Where(x => x.HouseholdId == household.HouseholdId
+            && x.CatalogItemId == variant.CatalogItemId && x.ProductVariantId == variantId && x.IsAvailable)
+            .ToListAsync(cancellationToken);
+        foreach (var offer in offers)
+        {
+            offer.IsAvailable = false;
+            offer.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+
         await db.SaveChangesAsync(cancellationToken);
         notifier.Notify(household.HouseholdId);
     }

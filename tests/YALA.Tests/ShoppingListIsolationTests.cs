@@ -327,6 +327,41 @@ public sealed class ShoppingListIsolationTests
     }
 
     [Fact]
+    public async Task RemovingExactProductHidesItAndPreservesOfferHistory()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+        var (_, item) = await fixture.SeedSingleHouseholdAsync();
+        var householdService = fixture.CreateHouseholdService("gary");
+        var catalogService = fixture.CreateCatalogService(householdService);
+        var storeService = fixture.CreateStoreService(householdService);
+        var listService = fixture.CreateShoppingListService(householdService);
+        await storeService.SaveStoreAsync(null, "Aldi");
+        var store = Assert.Single(await storeService.GetStoresAsync());
+        var variantId = await catalogService.SaveVariantAsync(item.Id, "Large bag", "Acme", "20 lb", true, "12345678", [store.Id]);
+
+        await using (var db = fixture.CreateDbContext())
+        {
+            var offer = await db.StoreOffers.SingleAsync(x => x.ProductVariantId == variantId);
+            db.PriceHistory.Add(new PriceHistory { HouseholdId = offer.HouseholdId, StoreOfferId = offer.Id, Price = 24.99m });
+            await db.SaveChangesAsync();
+        }
+
+        await catalogService.RemoveVariantAsync(variantId);
+
+        Assert.Empty((await catalogService.GetDetailsAsync(item.Id))!.Variants);
+        Assert.Empty(await storeService.GetVariantsAsync(item.Id));
+        Assert.Empty(await catalogService.GetItemsAsync("Large bag"));
+        Assert.Empty(await listService.GetQuickAddChoicesAsync("12345678"));
+        await using var verify = fixture.CreateDbContext();
+        var archivedVariant = await verify.ProductVariants.SingleAsync(x => x.Id == variantId);
+        Assert.True(archivedVariant.IsArchived);
+        Assert.False(archivedVariant.IsPreferred);
+        var unavailableOffer = await verify.StoreOffers.Include(x => x.Prices).SingleAsync(x => x.ProductVariantId == variantId);
+        Assert.False(unavailableOffer.IsAvailable);
+        Assert.Single(unavailableOffer.Prices);
+    }
+
+    [Fact]
     public async Task TypedAdHocItemCanBeAssignedAndPromotedWithoutLosingListState()
     {
         await using var fixture = await TestFixture.CreateAsync();

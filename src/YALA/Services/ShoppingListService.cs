@@ -115,10 +115,10 @@ public sealed class ShoppingListService(
             catalog = catalog.Where(x => x.Name.ToLower().Contains(term)
                 || (x.Description != null && x.Description.ToLower().Contains(term))
                 || x.Aliases.Any(a => a.Alias.ToLower().Contains(term))
-                || x.Variants.Any(v => v.Name.ToLower().Contains(term)
+                || x.Variants.Any(v => !v.IsArchived && (v.Name.ToLower().Contains(term)
                     || (v.Brand != null && v.Brand.ToLower().Contains(term))
-                    || (v.Size != null && v.Size.ToLower().Contains(term)))
-                || x.Variants.Any(v => v.Barcodes.Any(b => b.Barcode == trimmed)));
+                    || (v.Size != null && v.Size.ToLower().Contains(term))))
+                || x.Variants.Any(v => !v.IsArchived && v.Barcodes.Any(b => b.Barcode == trimmed)));
         }
 
         var matches = await catalog
@@ -128,13 +128,13 @@ public sealed class ShoppingListService(
                 x.Name,
                 x.IsFavorite,
                 MatchRank = string.IsNullOrWhiteSpace(trimmed) ? 0
-                    : x.Variants.Any(v => v.Barcodes.Any(b => b.Barcode == trimmed)) ? 0
+                    : x.Variants.Any(v => !v.IsArchived && v.Barcodes.Any(b => b.Barcode == trimmed)) ? 0
                     : x.Name.ToLower() == trimmed.ToLower() ? 1
                     : x.Name.ToLower().StartsWith(trimmed.ToLower()) ? 2
                     : x.Aliases.Any(a => a.Alias.ToLower() == trimmed.ToLower()) ? 3
                     : x.Aliases.Any(a => a.Alias.ToLower().StartsWith(trimmed.ToLower())) ? 4
                     : x.Name.ToLower().Contains(trimmed.ToLower()) ? 5
-                    : x.Variants.Any(v => v.Name.ToLower().Contains(trimmed.ToLower()) || (v.Brand != null && v.Brand.ToLower().Contains(trimmed.ToLower()))) ? 6
+                    : x.Variants.Any(v => !v.IsArchived && (v.Name.ToLower().Contains(trimmed.ToLower()) || (v.Brand != null && v.Brand.ToLower().Contains(trimmed.ToLower())))) ? 6
                     : 7,
                 LastPurchased = db.PurchaseHistory.Where(p => p.HouseholdId == household.HouseholdId && p.CatalogItemId == x.Id)
                     .OrderByDescending(p => p.PurchasedAt).Select(p => (DateTimeOffset?)p.PurchasedAt).FirstOrDefault(),
@@ -199,7 +199,7 @@ public sealed class ShoppingListService(
             x => x.HouseholdId == household.HouseholdId && !x.IsArchived
                 && (x.Name.ToLower() == term
                     || x.Aliases.Any(a => a.Alias.ToLower() == term)
-                    || x.Variants.Any(v => v.Name.ToLower() == term || v.Barcodes.Any(b => b.Barcode == normalized))),
+                    || x.Variants.Any(v => !v.IsArchived && (v.Name.ToLower() == term || v.Barcodes.Any(b => b.Barcode == normalized)))),
             cancellationToken);
         var row = item is not null
             ? await db.ShoppingListItems.SingleOrDefaultAsync(x => x.HouseholdId == household.HouseholdId && x.CatalogItemId == item.Id, cancellationToken)
