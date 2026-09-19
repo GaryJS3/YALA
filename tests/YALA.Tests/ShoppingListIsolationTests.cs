@@ -174,11 +174,18 @@ public sealed class ShoppingListIsolationTests
     public async Task StoreDetailsStayInHouseholdAndRemovingAnItemPreservesItsPriceHistory()
     {
         await using var fixture = await TestFixture.CreateAsync();
-        var (_, item) = await fixture.SeedSingleHouseholdAsync();
+        var (household, item) = await fixture.SeedSingleHouseholdAsync();
         var service = fixture.CreateStoreService(fixture.CreateHouseholdService("gary"));
         await service.SaveStoreAsync(null, "Aldi");
         var store = Assert.Single(await service.GetStoresAsync());
         Assert.Equal(store, await service.GetStoreAsync(store.Id));
+        await using (var imageDb = fixture.CreateDbContext())
+        {
+            var storedStore = await imageDb.Stores.SingleAsync();
+            storedStore.ImagePath = $"households/{storedStore.HouseholdId:D}/stores/aldi.png";
+            await imageDb.SaveChangesAsync();
+        }
+        Assert.Equal($"households/{household.Id:D}/stores/aldi.png", (await service.GetStoreAsync(store.Id))!.ImagePath);
 
         await service.SaveOfferAsync(store.Id, item.Id, "Dairy", 3.50m);
         var offer = Assert.Single(await service.GetOffersAsync(store.Id));
@@ -204,9 +211,16 @@ public sealed class ShoppingListIsolationTests
         var storeService = fixture.CreateStoreService(householdService);
         await storeService.SaveStoreAsync(null, "Aldi");
         var store = Assert.Single(await storeService.GetStoresAsync());
+        await using (var imageDb = fixture.CreateDbContext())
+        {
+            (await imageDb.Stores.SingleAsync()).ImagePath = "households/example/stores/aldi.png";
+            await imageDb.SaveChangesAsync();
+        }
 
         await catalogService.SetStoreAvailabilityAsync(item.Id, store.Id, true);
-        Assert.True(Assert.Single((await catalogService.GetDetailsAsync(item.Id))!.Stores).IsAvailable);
+        var availableStore = Assert.Single((await catalogService.GetDetailsAsync(item.Id))!.Stores);
+        Assert.True(availableStore.IsAvailable);
+        Assert.Equal("households/example/stores/aldi.png", availableStore.ImagePath);
 
         await catalogService.SetStoreAvailabilityAsync(item.Id, store.Id, false);
         Assert.False(Assert.Single((await catalogService.GetDetailsAsync(item.Id))!.Stores).IsAvailable);
@@ -315,6 +329,11 @@ public sealed class ShoppingListIsolationTests
         var stores = await storeService.GetStoresAsync();
         var aldi = Assert.Single(stores, x => x.Name == "Aldi");
         var walmart = Assert.Single(stores, x => x.Name == "Walmart");
+        await using (var imageDb = fixture.CreateDbContext())
+        {
+            (await imageDb.Stores.SingleAsync(x => x.Id == walmart.Id)).ImagePath = "households/example/stores/walmart.png";
+            await imageDb.SaveChangesAsync();
+        }
         await catalogService.SaveVariantAsync(item.Id, "Small bag", "Acme", "5 lb", false, storeIds: [aldi.Id]);
         await catalogService.SaveVariantAsync(item.Id, "Large bag", "Acme", "20 lb", true, storeIds: [walmart.Id]);
         await listService.AddAsync(item.Id);
@@ -326,6 +345,7 @@ public sealed class ShoppingListIsolationTests
         Assert.False(Assert.Single(row.ExactProducts, x => x.Name == "Small bag").IsPreferred);
         Assert.True(Assert.Single(row.ExactProducts, x => x.Name == "Large bag").IsPreferred);
         Assert.Equal(2, row.StorePrices.Count);
+        Assert.Equal("households/example/stores/walmart.png", Assert.Single(row.StorePrices, x => x.StoreId == walmart.Id).ImagePath);
     }
 
     [Fact]

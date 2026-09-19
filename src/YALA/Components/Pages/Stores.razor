@@ -30,8 +30,10 @@ else
         @foreach (var store in stores)
         {
             <article class="store-card store-list-card @(store.IsActive ? "" : "store-inactive")" @onclick="() => OpenStore(store.Id)">
-                <div class="store-card-head"><h3>@store.Name</h3><span class="status-dot @(store.IsActive ? "" : "off")"></span></div>
-                <p>@store.OfferCount item@(store.OfferCount == 1 ? "" : "s") tracked · @(store.IsActive ? "Active" : "Paused")</p>
+                <div class="store-card-content">
+                    <div class="store-card-logo">@if (!string.IsNullOrWhiteSpace(store.ImagePath)) { <img src="/images/@store.ImagePath" alt="" loading="lazy" /> } else { <span aria-hidden="true">⌂</span> }</div>
+                    <div class="store-card-copy"><div class="store-card-head"><h3>@store.Name</h3><span class="status-dot @(store.IsActive ? "" : "off")"></span></div><p>@store.OfferCount item@(store.OfferCount == 1 ? "" : "s") tracked · @(store.IsActive ? "Active" : "Paused")</p></div>
+                </div>
                 <div class="store-card-actions" @onclick:stopPropagation="true">
                     <a class="quiet-link" href="/stores/@store.Id">Manage store</a><span class="store-order-spacer"></span>
                     <button type="button" class="icon-button store-order-button" aria-label="Move @store.Name up" disabled="@(store.SortOrder == stores.Min(x => x.SortOrder))" @onclick="() => MoveStoreAsync(store.Id, -1)">↑</button>

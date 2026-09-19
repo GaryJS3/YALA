@@ -35,7 +35,7 @@ public sealed class ShoppingListRow
         ExactProducts.Any(product => product.IsPreferred && product.StoreNames.Contains(storeName, StringComparer.OrdinalIgnoreCase));
 }
 
-public sealed record StorePrice(Guid StoreId, string StoreName, decimal? Price, bool IsAssigned, bool IsPreferred);
+public sealed record StorePrice(Guid StoreId, string StoreName, decimal? Price, bool IsAssigned, bool IsPreferred, string? ImagePath = null);
 public sealed record ExactProductSummary(string Name, string? Brand, string? Size, bool IsPreferred, IReadOnlyList<string> StoreNames);
 public sealed record QuickAddChoice(Guid Id, string Name, bool IsFavorite, DateTimeOffset? LastPurchased, int PurchaseCount);
 public sealed record StoreListEntry(ShoppingListRow Item, Guid? StoreId);
@@ -132,10 +132,10 @@ public sealed class ShoppingListService(
             AssignedStoreName = row.AssignedStore?.Name,
             CategoryName = row.CatalogItem?.Category?.Name,
             StorePrices = offers.Where(x => x.CatalogItemId == row.CatalogItemId)
-                .GroupBy(x => new { x.StoreId, x.Store.Name })
+                .GroupBy(x => new { x.StoreId, x.Store.Name, x.Store.ImagePath })
                 .Select(x => new StorePrice(x.Key.StoreId, x.Key.Name,
                     x.SelectMany(o => o.Prices).OrderByDescending(p => p.RecordedAt).Select(p => (decimal?)p.Price).FirstOrDefault(),
-                    row.AssignedStoreId == x.Key.StoreId, x.Any(o => o.IsPreferred)))
+                    row.AssignedStoreId == x.Key.StoreId, x.Any(o => o.IsPreferred), x.Key.ImagePath))
                 .OrderByDescending(x => x.IsPreferred)
                 .ThenBy(x => x.StoreName)
                 .ToArray(),

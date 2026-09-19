@@ -1,6 +1,7 @@
 @page "/stores/{Id:guid}"
 @attribute [Authorize]
 @inject StoreService StoreService
+@inject ImageService ImageService
 
 <PageTitle>@(store?.Name ?? "Store") · YALA</PageTitle>
 <nav class="item-breadcrumb" aria-label="Breadcrumb"><a href="/stores">Stores</a><span>/</span><span>@(store?.Name ?? "Store")</span></nav>
@@ -16,7 +17,10 @@ else if (store is null)
 else
 {
     <section class="item-hero store-hero">
-        <div class="item-portrait store-portrait" aria-hidden="true">⌂</div>
+        <div class="item-portrait store-portrait">
+            @if (!string.IsNullOrWhiteSpace(store.ImagePath)) { <img src="/images/@store.ImagePath" alt="@store.Name logo" /> } else { <span aria-hidden="true">⌂</span> }
+            @if (editing) { <label class="item-photo-action">@(string.IsNullOrWhiteSpace(store.ImagePath) ? "Add logo or photo" : "Change logo or photo")<InputFile accept="image/jpeg,image/png,image/webp" OnChange="UploadStoreImageAsync" /></label> }
+        </div>
         <div class="item-hero-copy"><p class="eyebrow">YOUR HOUSEHOLD STORE</p><h1>@store.Name</h1><p>@store.OfferCount item@(store.OfferCount == 1 ? "" : "s") tracked at this store.</p><div class="item-status-line"><span class="item-status @(store.IsActive ? "" : "archived")">@(store.IsActive ? "Active store" : "Paused store")</span></div></div>
         <div class="item-hero-actions">@if (!editing) { <button class="button button-primary" type="button" @onclick="BeginEdit">Edit store <span>✎</span></button> } else { <span class="item-editing-state"><span class="item-editing-dot"></span> Editing</span> }</div>
     </section>
@@ -79,6 +83,12 @@ else
     private async Task ReloadAsync() { store = await StoreService.GetStoreAsync(Id); offers = store is null ? [] : await StoreService.GetOffersAsync(Id); }
     private void BeginEdit() { editName = store!.Name; editActive = store.IsActive; editing = true; error = success = null; }
     private void CancelEdit() { editing = false; error = null; }
+    private async Task UploadStoreImageAsync(InputFileChangeEventArgs args)
+    {
+        try { saving = true; await ImageService.SaveStoreImageAsync(Id, args.File); await ReloadAsync(); error = null; success = "Store picture saved."; }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IOException or DbUpdateException) { error = ex.Message; }
+        finally { saving = false; }
+    }
     private async Task SaveAsync() { try { saving = true; await StoreService.SaveStoreAsync(Id, editName); await StoreService.SetActiveAsync(Id, editActive); await ReloadAsync(); editing = false; error = null; success = "Store changes saved."; } catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or DbUpdateException) { error = ex.Message; } finally { saving = false; } }
     private async Task SetPreferredOfferAsync(StoreOfferSummary offer) => await RunOfferActionAsync(() => StoreService.SetPreferredOfferAsync(offer.Id, !offer.IsPreferred));
     private async Task RemoveOfferAsync(StoreOfferSummary offer) => await RunOfferActionAsync(() => StoreService.RemoveOfferAsync(offer.Id));

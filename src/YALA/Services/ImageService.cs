@@ -43,6 +43,20 @@ public sealed class ImageService(
         notifier.Notify(household.HouseholdId);
     }
 
+    public async Task SaveStoreImageAsync(Guid storeId, IBrowserFile file, CancellationToken cancellationToken = default)
+    {
+        var household = await RequireHouseholdAsync(cancellationToken);
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var store = await db.Stores.SingleOrDefaultAsync(x => x.Id == storeId && x.HouseholdId == household.HouseholdId, cancellationToken)
+            ?? throw new InvalidOperationException("That store is not in this household.");
+        var oldPath = store.ImagePath;
+        store.ImagePath = await SaveAsync(household.HouseholdId, "stores", file, cancellationToken);
+        try { await db.SaveChangesAsync(cancellationToken); }
+        catch { DeleteStoredImage(store.ImagePath, household.HouseholdId, "stores"); throw; }
+        DeleteStoredImage(oldPath, household.HouseholdId, "stores");
+        notifier.Notify(household.HouseholdId);
+    }
+
     public async Task SaveVariantImageFromUrlAsync(Guid variantId, string imageUrl, CancellationToken cancellationToken = default)
     {
         if (!Uri.TryCreate(imageUrl, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))

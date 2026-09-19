@@ -4,7 +4,7 @@ using YALA.Data.Entities;
 
 namespace YALA.Services;
 
-public sealed record StoreSummary(Guid Id, string Name, bool IsActive, int OfferCount, int SortOrder);
+public sealed record StoreSummary(Guid Id, string Name, string? ImagePath, bool IsActive, int OfferCount, int SortOrder);
 public sealed record PricePoint(decimal Price, DateTimeOffset RecordedAt);
 public sealed record StoreOfferSummary(Guid Id, Guid CatalogItemId, string ItemName, string? ProductName, string? Aisle, bool IsPreferred, decimal? LastPrice, decimal? AveragePrice, IReadOnlyList<PricePoint> PriceHistory);
 
@@ -16,7 +16,7 @@ public sealed class StoreService(IDbContextFactory<ApplicationDbContext> dbConte
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         return await db.Stores.AsNoTracking().Where(x => x.HouseholdId == household.HouseholdId)
             .OrderBy(x => x.SortOrder).ThenBy(x => x.Name)
-            .Select(x => new StoreSummary(x.Id, x.Name, x.IsActive, x.Offers.Count(o => o.IsAvailable), x.SortOrder))
+            .Select(x => new StoreSummary(x.Id, x.Name, x.ImagePath, x.IsActive, x.Offers.Count(o => o.IsAvailable), x.SortOrder))
             .ToListAsync(cancellationToken);
     }
 
@@ -26,7 +26,7 @@ public sealed class StoreService(IDbContextFactory<ApplicationDbContext> dbConte
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         return await db.Stores.AsNoTracking()
             .Where(x => x.Id == id && x.HouseholdId == household.HouseholdId)
-            .Select(x => new StoreSummary(x.Id, x.Name, x.IsActive, x.Offers.Count(o => o.IsAvailable), x.SortOrder))
+            .Select(x => new StoreSummary(x.Id, x.Name, x.ImagePath, x.IsActive, x.Offers.Count(o => o.IsAvailable), x.SortOrder))
             .SingleOrDefaultAsync(cancellationToken);
     }
 

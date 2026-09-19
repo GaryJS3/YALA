@@ -91,7 +91,7 @@ else
                             {
                                 <label class="store-check @(store.IsAvailable ? "selected" : "") @(store.IsActive ? "" : "inactive")">
                                     <input type="checkbox" checked="@store.IsAvailable" @onchange="e => SetStoreAsync(store.Id, (bool)(e.Value ?? false))" />
-                                    <span class="store-check-mark">✓</span><span><strong>@store.Name</strong><small>@(store.IsActive ? "Active store" : "Inactive store")</small></span>
+                                    <span class="store-check-mark">✓</span><StoreMark Name="@store.Name" ImagePath="@store.ImagePath" ShowName="true" /><small class="store-check-status">@(store.IsActive ? "Active store" : "Inactive store")</small>
                                 </label>
                             }
                         </div>
@@ -106,7 +106,7 @@ else
                     <div class="item-store-summary" aria-label="Stores carrying this item">
                         @foreach (var store in availableStores)
                         {
-                            <span class="@(store.IsActive ? "" : "inactive")"><i aria-hidden="true">✓</i>@store.Name@if (!store.IsActive) { <small>Inactive</small> }</span>
+                            <span class="@(store.IsActive ? "" : "inactive")"><StoreMark Name="@store.Name" ImagePath="@store.ImagePath" ShowName="true" />@if (!store.IsActive) { <small>Inactive</small> }</span>
                         }
                     </div>
                 }

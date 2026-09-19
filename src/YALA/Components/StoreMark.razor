@@ -1,0 +1,24 @@
+<span class="store-mark @(ShowName ? "store-mark-named" : "store-mark-compact")" aria-label="@Name" title="@Name">
+    <span class="store-mark-image" aria-hidden="true">
+        @if (!string.IsNullOrWhiteSpace(ImagePath))
+        {
+            <img src="/images/@ImagePath" alt="" loading="lazy" />
+        }
+        else
+        {
+            <span>@Initial</span>
+        }
+    </span>
+    @if (ShowName)
+    {
+        <span class="store-mark-name">@Name</span>
+    }
+</span>
+
+@code {
+    [Parameter, EditorRequired] public string Name { get; set; } = string.Empty;
+    [Parameter] public string? ImagePath { get; set; }
+    [Parameter] public bool ShowName { get; set; }
+
+    private string Initial => string.IsNullOrWhiteSpace(Name) ? "?" : Name.Trim()[..1].ToUpperInvariant();
+}

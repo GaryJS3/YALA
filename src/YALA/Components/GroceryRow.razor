@@ -33,7 +33,7 @@
                 <span>Available at</span>
                 @foreach (var store in Item.StorePrices)
                 {
-                    <strong>@store.StoreName</strong>
+                    <StoreMark Name="@store.StoreName" ImagePath="@store.ImagePath" />
                 }
             </div>
         }

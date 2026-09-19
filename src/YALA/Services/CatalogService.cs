@@ -9,7 +9,7 @@ public sealed record AdHocCatalogEntry(Guid ShoppingListItemId, string Name, dec
 public sealed record ProductVariantEntry(Guid Id, string Name, string? Brand, string? Size, string? ImagePath, bool IsPreferred,
     IReadOnlyList<(Guid Id, string Barcode)> Barcodes, IReadOnlySet<Guid> StoreIds);
 public sealed record CatalogAliasEntry(Guid Id, string Alias);
-public sealed record ItemStoreAvailability(Guid Id, string Name, bool IsActive, bool IsAvailable);
+public sealed record ItemStoreAvailability(Guid Id, string Name, string? ImagePath, bool IsActive, bool IsAvailable);
 public sealed record CatalogDetails(Guid Id, string Name, string? Description, Guid? CategoryId, string? CategoryName,
     decimal DefaultQuantity, bool IsFavorite, bool IsArchived, string? ImagePath,
     IReadOnlyList<CatalogAliasEntry> Aliases, IReadOnlyList<ProductVariantEntry> Variants,
@@ -110,7 +110,7 @@ public sealed class CatalogService(IDbContextFactory<ApplicationDbContext> dbCon
             : null;
         var stores = await db.Stores.AsNoTracking().Where(x => x.HouseholdId == household.HouseholdId)
             .OrderBy(x => x.SortOrder).ThenBy(x => x.Name)
-            .Select(x => new ItemStoreAvailability(x.Id, x.Name, x.IsActive,
+            .Select(x => new ItemStoreAvailability(x.Id, x.Name, x.ImagePath, x.IsActive,
                 db.StoreOffers.Any(o => o.HouseholdId == household.HouseholdId && o.CatalogItemId == item.Id && o.StoreId == x.Id && o.IsAvailable)))
             .ToListAsync(cancellationToken);
         var variantStoreIds = await db.StoreOffers.AsNoTracking()
