@@ -1,0 +1,67 @@
+@using YALA.Services
+
+@if (!string.IsNullOrWhiteSpace(Item.ImagePath))
+{
+    <img class="grocery-thumb" src="/images/@Item.ImagePath" alt="" loading="lazy" />
+}
+<div class="grocery-main">
+    <div class="grocery-name-line">
+        <span class="grocery-name">@Item.Name</span>
+        @if (Item.IsFavorite) { <span class="favorite-star" aria-label="Favorite">★</span> }
+        @if (Item.CatalogItemId is not null) { <span class="grocery-detail-hint" aria-hidden="true">↗</span> }
+    </div>
+    @if (!string.IsNullOrWhiteSpace(Item.Description))
+    {
+        <span class="grocery-description">@Item.Description</span>
+    }
+    @{ var visibleExactProducts = CurrentStoreId is Guid exactProductStoreId ? Item.GetExactProductsForStore(exactProductStoreId) : Item.ExactProducts; }
+    @if ((CurrentStoreId is not null && visibleExactProducts.Count > 0) || (CurrentStoreId is null && visibleExactProducts.Count > 1))
+    {
+        <div class="exact-product-list" aria-label="Exact products">
+            @foreach (var product in visibleExactProducts)
+            {
+                <span><strong>@product.Name</strong>@if (product.IsPreferred && Item.ExactProducts.Count > 1) { <i class="preferred-store-mark">Preferred</i> }@if (!string.IsNullOrWhiteSpace(product.Brand) || !string.IsNullOrWhiteSpace(product.Size)) { <small>@string.Join(" · ", new[] { product.Brand, product.Size }.Where(x => !string.IsNullOrWhiteSpace(x)))</small> }@if (product.StoreNames.Count > 0) { <em>@string.Join(", ", product.StoreNames)</em> }</span>
+            }
+        </div>
+    }
+    @if (!Item.IsAdHoc && !ShowPrices && Item.StorePrices.Count > 0)
+    {
+        <div class="available-store-list" aria-label="Available stores">
+            <span>Available at</span>
+            @foreach (var store in Item.StorePrices)
+            {
+                <StoreMark Name="@store.StoreName" ImagePath="@store.ImagePath" />
+            }
+        </div>
+    }
+    @if (ShowPrices && Item.StorePrices.Count > 0)
+    {
+        <div class="store-price-list">
+            @foreach (var offer in CurrentStoreId is Guid storeId ? Item.StorePrices.Where(x => x.StoreId == storeId) : Item.StorePrices)
+            {
+                <span>@if (offer.IsPreferred) { <i class="preferred-store-mark">Preferred</i> } <b>@(offer.Price is decimal price ? price.ToString("C") : "—")</b></span>
+            }
+        </div>
+        @if (CurrentStoreId is Guid currentStoreId)
+        {
+            var otherStores = Item.StorePrices.Where(x => x.StoreId != currentStoreId).ToArray();
+            @if (otherStores.Length > 0)
+            {
+                <div class="other-store-list" aria-label="Also available at other stores">
+                    <span>Also at</span>
+                    @foreach (var store in otherStores)
+                    {
+                        var carriesPreferredProduct = Item.StoreCarriesPreferredExactProduct(store.StoreName);
+                        <strong>@store.StoreName@if (store.IsPreferred || carriesPreferredProduct) { <i class="preferred-store-mark">Preferred</i> }</strong>
+                    }
+                </div>
+            }
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public ShoppingListRow Item { get; set; } = default!;
+    [Parameter] public bool ShowPrices { get; set; }
+    [Parameter] public Guid? CurrentStoreId { get; set; }
+}

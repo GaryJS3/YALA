@@ -43,6 +43,7 @@ Pantry inventory, expiration tracking, meal planning, recipes, nutrition trackin
 
 ## Progress notes
 
+- 2026-09-19: Fixed the shopping-list circuit crash caused by invoking a method-generated render fragment inside clickable item wrappers. Row content now renders through a normal strongly typed Blazor component.
 - 2026-09-19: Fixed store-image delivery by allowing the household image endpoint to serve the stores folder. Store logos retain their original aspect ratio and transparent pixels across detail, list, and availability views.
 - 2026-09-19: Saved catalog items in both shopping-list views now open their catalog detail page when the item content is clicked, while ad-hoc entries and list controls remain unchanged.
 - 2026-09-19: Stores can now have household-scoped uploaded logos or pictures. Store images are validated and persisted alongside existing item images, and appear on store cards, store detail pages, shopping-list availability indicators, and item availability controls.
