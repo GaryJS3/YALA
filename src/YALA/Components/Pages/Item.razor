@@ -1,9 +1,12 @@
 @page "/catalog/item/new"
 @page "/catalog/item/{Id:guid}"
 @attribute [Authorize]
+@implements IAsyncDisposable
 @inject CatalogService CatalogService
 @inject ImageService ImageService
+@inject ProductLookupService ProductLookupService
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
 
 <PageTitle>@(details?.Name ?? (IsNew ? "New item" : "Item")) · YALA</PageTitle>
 
@@ -119,6 +122,26 @@ else
             {
                 <div class="variant-entry">
                     <h3>Add an exact product</h3>
+                    <div class="barcode-lookup">
+                        <div class="barcode-lookup-copy"><strong>Scan or enter its barcode</strong><span>We’ll check Open Facts and UPCitemdb, then fill the richest details we find.</span></div>
+                        <div class="barcode-lookup-actions">
+                            <input @bind="variantBarcode" @bind:event="oninput" inputmode="numeric" autocomplete="off" aria-label="UPC, EAN, or GTIN barcode" placeholder="UPC, EAN, or GTIN" @onkeydown="BarcodeKeyDownAsync" />
+                            <button type="button" class="button button-outline" disabled="@lookingUp" @onclick="LookupBarcodeAsync">@(lookingUp ? "Looking up…" : "Look up")</button>
+                            <button type="button" class="button button-outline scanner-button" @onclick="ToggleScannerAsync">@(scanning ? "Stop camera" : "Scan camera") <span aria-hidden="true">▣</span></button>
+                        </div>
+                        @if (scanning)
+                        {
+                            <div class="scanner-viewport"><video @ref="scannerVideo" muted playsinline aria-label="Barcode scanner camera"></video><span>Hold the barcode inside the frame</span></div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(lookupMessage)) { <p class="lookup-message" role="status">@lookupMessage</p> }
+                        @if (lookupResult is not null)
+                        {
+                            <div class="lookup-result">
+                                @if (!string.IsNullOrWhiteSpace(lookupResult.ImageUrl)) { <img src="@lookupResult.ImageUrl" alt="Product from lookup" referrerpolicy="no-referrer" /> }
+                                <div><strong>@(lookupResult.Name ?? "Product found")</strong><span>@string.Join(" · ", new[] { lookupResult.Brand, lookupResult.Size }.Where(x => !string.IsNullOrWhiteSpace(x)))</span>@if (!string.IsNullOrWhiteSpace(lookupResult.Description)) { <small>@lookupResult.Description</small> }<em>Matched by @string.Join(" + ", lookupResult.Sources)</em></div>
+                            </div>
+                        }
+                    </div>
                     <div class="form-grid"><div class="form-field"><label>Product name</label><input @bind="variantName" @bind:event="oninput" placeholder="Purina ONE Indoor Advantage" /></div><div class="form-field"><label>Brand</label><input @bind="variantBrand" @bind:event="oninput" placeholder="Purina ONE" /></div><div class="form-field"><label>Size</label><input @bind="variantSize" @bind:event="oninput" placeholder="16 lb" /></div><div class="form-field"><label>Barcode</label><input @bind="variantBarcode" @bind:event="oninput" inputmode="numeric" placeholder="017800123456" /></div></div>
                     <label class="preferred-checkbox"><input type="checkbox" @bind="variantPreferred" /> Preferred product</label><button type="button" class="button button-outline" @onclick="AddVariantAsync">Add product <span>+</span></button>
                 </div>
@@ -130,7 +153,7 @@ else
 @code {
     [Parameter] public Guid? Id { get; set; }
     private bool IsNew => Id is null;
-    private bool loading = true, editing, saving;
+    private bool loading = true, editing, saving, lookingUp, scanning;
     private CatalogDetails? details;
     private IReadOnlyList<Category> categories = [];
     private string editName = string.Empty, aliasInput = string.Empty, variantName = string.Empty, variantBrand = string.Empty, variantSize = string.Empty, variantBarcode = string.Empty;
@@ -138,6 +161,11 @@ else
     private Guid? editCategoryId;
     private decimal editQuantity = 1;
     private bool editFavorite, editArchived, variantPreferred;
+    private ProductLookupResult? lookupResult;
+    private string? lookupMessage;
+    private ElementReference scannerVideo;
+    private IJSObjectReference? scannerModule;
+    private DotNetObjectReference<Item>? dotNetReference;
 
     protected override async Task OnParametersSetAsync() { loading = true; categories = await CatalogService.GetCategoriesAsync(); details = Id is Guid id ? await CatalogService.GetDetailsAsync(id) : null; editing = IsNew; CopyToEdit(); loading = false; }
     private void CopyToEdit() { editName = details?.Name ?? string.Empty; editDescription = details?.Description; editCategoryId = details?.CategoryId; editQuantity = details?.DefaultQuantity ?? 1; editFavorite = details?.IsFavorite ?? false; editArchived = details?.IsArchived ?? false; }
@@ -154,5 +182,47 @@ else
     private async Task UploadItemImageAsync(InputFileChangeEventArgs args) => await RunDetailActionAsync(() => ImageService.SaveCatalogItemImageAsync(Id!.Value, args.File));
     private async Task UploadVariantImageAsync(Guid variantId, InputFileChangeEventArgs args) => await RunDetailActionAsync(() => ImageService.SaveVariantImageAsync(variantId, args.File));
     private async Task RunDetailActionAsync(Func<Task> action) { try { await action(); error = null; await ReloadAsync(); } catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IOException or DbUpdateException) { error = ex.Message; } }
+    private async Task BarcodeKeyDownAsync(KeyboardEventArgs args) { if (args.Key == "Enter") await LookupBarcodeAsync(); }
+    private async Task LookupBarcodeAsync()
+    {
+        try
+        {
+            lookingUp = true; lookupMessage = null; lookupResult = await ProductLookupService.LookupAsync(variantBarcode);
+            if (lookupResult is null) { lookupMessage = "No product was found. You can still enter the details manually."; return; }
+            variantBarcode = lookupResult.Barcode;
+            if (!string.IsNullOrWhiteSpace(lookupResult.Name)) variantName = lookupResult.Name;
+            if (!string.IsNullOrWhiteSpace(lookupResult.Brand)) variantBrand = lookupResult.Brand;
+            if (!string.IsNullOrWhiteSpace(lookupResult.Size)) variantSize = lookupResult.Size;
+            lookupMessage = "Product found. Review the editable details below before adding it.";
+        }
+        catch (ArgumentException ex) { lookupMessage = ex.Message; lookupResult = null; }
+        finally { lookingUp = false; }
+    }
+    private async Task ToggleScannerAsync()
+    {
+        try
+        {
+            scannerModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./barcode-scanner.js");
+            if (scanning) { await StopScannerAsync(); return; }
+            scanning = true; lookupMessage = "Starting camera…"; StateHasChanged(); await Task.Yield();
+            dotNetReference ??= DotNetObjectReference.Create(this);
+            await scannerModule.InvokeVoidAsync("start", scannerVideo, dotNetReference);
+            lookupMessage = "Camera ready. Hold a barcode steady inside the frame.";
+        }
+        catch (JSException ex) { scanning = false; lookupMessage = ex.Message.Replace("Error: ", string.Empty, StringComparison.Ordinal); }
+    }
+    private async Task StopScannerAsync()
+    {
+        if (scannerModule is not null) { try { await scannerModule.InvokeVoidAsync("stop", scannerVideo); } catch (JSDisconnectedException) { } }
+        scanning = false;
+    }
+    [JSInvokable]
+    public async Task BarcodeDetected(string barcode) { scanning = false; variantBarcode = barcode; lookupMessage = $"Scanned {barcode}. Looking it up…"; await InvokeAsync(StateHasChanged); await LookupBarcodeAsync(); await InvokeAsync(StateHasChanged); }
+    public async ValueTask DisposeAsync()
+    {
+        await StopScannerAsync();
+        dotNetReference?.Dispose();
+        if (scannerModule is not null) { try { await scannerModule.DisposeAsync(); } catch (JSDisconnectedException) { } }
+    }
     private static string Glyph(string? category) => category?.ToLowerInvariant() switch { "produce" => "✿", "dairy" => "◒", "meat" => "⌁", "frozen" => "❄", "bakery" => "◌", "drinks" => "◍", "pets" => "♧", "household" => "⌂", _ => "✳" };
 }

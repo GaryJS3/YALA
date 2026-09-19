@@ -104,12 +104,12 @@ dotnet ef database update --project src/YALA/YALA.csproj
 - Initial local account and household setup, login, logout, and remember-me.
 - Multiple independent households, a visible household switcher, a separately saved default, household member management, rename/archive/restore, and per-household category settings.
 - Quick add, search, favorites, recent and frequent purchases, fractional quantities, checked items, and clear-checked purchase history.
-- Catalog editing, categories, favorites, archive/restore, aliases, exact product variants, multiple barcodes, and optional item/product images.
+- Catalog editing, categories, favorites, archive/restore, aliases, exact product variants, multiple barcodes, optional item/product images, and camera/manual barcode lookup.
 - Household-specific stores with custom ordering, generic and variant-specific offers, aisle notes, and manual price history with last and average prices.
 - Items and Stores list views without duplicating shopping-list rows. Store assignment remains separate from store availability.
 - Household-scoped notifications for live list changes inside the single running instance.
 
-Images are limited to JPEG, PNG, or WebP files up to 4 MB. Camera barcode scanning and external product lookup are not included.
+Images are limited to JPEG, PNG, or WebP files up to 4 MB. Camera scanning requires HTTPS (or localhost), camera permission, and a browser with the Barcode Detection API; manual barcode entry is always available. Product lookup queries the four Open Facts databases and UPCitemdb, then merges the richest available result. Lookup services receive the barcode and the server's public IP address.
 
 ## Data and privacy
 

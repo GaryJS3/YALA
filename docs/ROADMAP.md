@@ -26,8 +26,8 @@ This file tracks the product direction and implementation status. Update it when
 
 These are future-friendly ideas from the original product brief; they are not commitments or current implementation requirements.
 
-- [ ] Camera barcode scanning.
-- [ ] Optional product lookup through Open Food Facts.
+- [x] Camera barcode scanning with manual barcode entry fallback.
+- [x] Product lookup across the Open Facts databases and UPCitemdb, merging the richest available details.
 - [ ] Installable PWA experience.
 - [ ] Receipt entry and estimated trip totals.
 - [ ] Store aisle ordering and per-store category ordering.
@@ -41,6 +41,7 @@ Pantry inventory, expiration tracking, meal planning, recipes, nutrition trackin
 
 ## Progress notes
 
+- 2026-09-18: Added camera barcode scanning and manual UPC/EAN/GTIN entry to exact products. Product details are filled from a merged Open Food Facts, Open Pet Food Facts, Open Beauty Facts, Open Products Facts, and UPCitemdb lookup, while remaining editable before saving.
 - 2026-09-18: Replaced inline catalog item editing/details with a dedicated item page. The page has distinct view and edit modes for attributes, photos, aliases, exact products, favorite/archive state, and per-store availability checkboxes; catalog rows now navigate to it.
 - 2026-09-18: Fixed logout from the main header by supplying the relative return URL expected by the Identity logout endpoint, avoiding an invalid `~//Account/Login` local redirect and its production error page.
 - 2026-09-18: Fixed stale form submissions by synchronizing action-driven fields on input in Catalog, Stores, and Household screens. The production reverse proxy was also returning 404 for `/_framework/blazor.web.js`, leaving server-side buttons inert; the app now serves the framework script through `/blazor.web.js` and explicitly includes ASP.NET web assets in publish output. Live acceptance verified empty-store validation, adding a store, saving a catalog item, and quick-adding a list item on deployed commit `db6c547`.

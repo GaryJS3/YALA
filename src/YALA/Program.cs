@@ -54,7 +54,19 @@ builder.Services.AddScoped<ShoppingListService>();
 builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<StoreService>();
 builder.Services.AddScoped<ImageService>();
+builder.Services.AddScoped<ProductLookupService>();
 builder.Services.AddSingleton<ShoppingListChangeNotifier>();
+builder.Services.AddHttpClient("OpenFacts", client =>
+{
+    client.BaseAddress = new Uri("https://world.openfoodfacts.org/");
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("YALA/1.0 (https://github.com/GaryJS3/YALA)");
+    client.Timeout = TimeSpan.FromSeconds(8);
+});
+builder.Services.AddHttpClient("UPCitemdb", client =>
+{
+    client.BaseAddress = new Uri("https://api.upcitemdb.com/");
+    client.Timeout = TimeSpan.FromSeconds(8);
+});
 
 builder.Services.AddIdentityCore<ApplicationUser>(options =>
     {
