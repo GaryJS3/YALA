@@ -24,7 +24,7 @@ else
 {
     <section class="item-hero">
         <div class="item-portrait">
-            @if (!string.IsNullOrWhiteSpace(details?.ImagePath)) { <img src="/images/@details.ImagePath" alt="@details.Name" /> }
+            @if (!string.IsNullOrWhiteSpace(details?.ImagePath)) { <ImageLightbox Src="@($"/images/{details.ImagePath}")" Alt="@details.Name" TriggerClass="item-portrait-image" /> }
             else { <span aria-hidden="true">@Glyph(details?.CategoryName)</span> }
             @if (editing && !IsNew)
             {
@@ -126,7 +126,7 @@ else
                 @foreach (var variant in details.Variants)
                 {
                     <article class="product-card">
-                        @if (!string.IsNullOrWhiteSpace(variant.ImagePath)) { <img src="/images/@variant.ImagePath" alt="@variant.Name" /> } else { <div class="product-placeholder">◇</div> }
+                        @if (!string.IsNullOrWhiteSpace(variant.ImagePath)) { <ImageLightbox Src="@($"/images/{variant.ImagePath}")" Alt="@variant.Name" TriggerClass="product-card-image" Loading="lazy" /> } else { <div class="product-placeholder">◇</div> }
                         <div class="variant-title"><strong>@variant.Name</strong>@if (variant.IsPreferred) { <span class="badge">Preferred</span> }</div>
                         @if (!string.IsNullOrWhiteSpace(variant.Brand) || !string.IsNullOrWhiteSpace(variant.Size)) { <small>@variant.Brand @variant.Size</small> }
                         <div class="barcode-list">@foreach (var barcode in variant.Barcodes) { <span class="barcode-chip">@barcode.Barcode@if (editing) { <button type="button" aria-label="Remove barcode" @onclick="() => RemoveBarcodeAsync(barcode.Id)">×</button> }</span> }</div>

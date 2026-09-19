@@ -4,6 +4,10 @@
     <button type="button" class="check-control" aria-label="@(Item.IsChecked ? "Mark " + Item.Name + " not done" : "Mark " + Item.Name + " done")" @onclick="() => OnToggle.InvokeAsync(Item.Id)">
         @if (Item.IsChecked) { <span>✓</span> }
     </button>
+    @if (!string.IsNullOrWhiteSpace(Item.ImagePath))
+    {
+        <ImageLightbox Src="@($"/images/{Item.ImagePath}")" Alt="@Item.Name" TriggerClass="grocery-thumb" Loading="lazy" />
+    }
     @if (Item.CatalogItemId is Guid catalogItemId)
     {
         <a class="grocery-item-link" href="@($"/catalog/item/{catalogItemId}")" aria-label="View details for @Item.Name">

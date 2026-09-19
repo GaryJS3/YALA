@@ -1,9 +1,5 @@
 @using YALA.Services
 
-@if (!string.IsNullOrWhiteSpace(Item.ImagePath))
-{
-    <img class="grocery-thumb" src="/images/@Item.ImagePath" alt="" loading="lazy" />
-}
 <div class="grocery-main">
     <div class="grocery-name-line">
         <span class="grocery-name">@Item.Name</span>

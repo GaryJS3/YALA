@@ -1,0 +1,53 @@
+@if (!string.IsNullOrWhiteSpace(Src))
+{
+    <button type="button" class="image-lightbox-trigger @TriggerClass" aria-label="View full-size image of @Alt" @onclick="Open">
+        <img src="@Src" alt="@Alt" loading="@Loading" />
+    </button>
+}
+
+@if (isOpen)
+{
+    <div class="image-lightbox" role="dialog" aria-modal="true" aria-label="Full-size image of @Alt"
+         tabindex="-1" @ref="dialog" @onclick="Close" @onkeydown="HandleKeyDown">
+        <button type="button" class="image-lightbox-close" aria-label="Close full-size image" @onclick="Close">×</button>
+        <div class="image-lightbox-content" @onclick:stopPropagation="true">
+            <img src="@Src" alt="@Alt" />
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Src { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string Alt { get; set; } = string.Empty;
+    [Parameter] public string? TriggerClass { get; set; }
+    [Parameter] public string Loading { get; set; } = "eager";
+
+    private bool isOpen;
+    private ElementReference dialog;
+    private bool focusDialog;
+
+    private void Open()
+    {
+        isOpen = true;
+        focusDialog = true;
+    }
+
+    private void Close() => isOpen = false;
+
+    private void HandleKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape")
+        {
+            Close();
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (focusDialog)
+        {
+            focusDialog = false;
+            await dialog.FocusAsync();
+        }
+    }
+}

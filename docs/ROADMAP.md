@@ -43,6 +43,7 @@ Pantry inventory, expiration tracking, meal planning, recipes, nutrition trackin
 
 ## Progress notes
 
+- 2026-09-19: Item images on the shopping list and item detail page, including exact-product images, now open in an accessible full-screen viewer without navigating away. The viewer closes from its button, backdrop, or Escape key.
 - 2026-09-19: Reduced the shopping-list detail-link hit area so only the item content itself opens the catalog page; empty row space and list controls no longer trigger navigation.
 - 2026-09-19: Shopping-list availability now shows bare, size-capped store logos without button-like borders; stores without an uploaded logo use a compact name chip.
 - 2026-09-19: Fixed the shopping-list circuit crash caused by invoking a method-generated render fragment inside clickable item wrappers. Row content now renders through a normal strongly typed Blazor component.
