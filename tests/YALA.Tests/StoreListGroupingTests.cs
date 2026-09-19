@@ -57,4 +57,31 @@ public sealed class StoreListGroupingTests
         Assert.Equal("Walmart", group.Name);
         Assert.Equal(storeId, Assert.Single(group.Items).StoreId);
     }
+
+    [Fact]
+    public void ExactProductsForStore_IncludeSingleMatchingProductAndExcludeOtherStores()
+    {
+        var bjsId = Guid.NewGuid();
+        var walmartId = Guid.NewGuid();
+        var row = new ShoppingListRow
+        {
+            CatalogItemId = Guid.NewGuid(),
+            StorePrices =
+            [
+                new StorePrice(bjsId, "BJ's", null, false, false),
+                new StorePrice(walmartId, "Walmart", null, false, true)
+            ],
+            ExactProducts =
+            [
+                new ExactProductSummary("Club size", "Brand", "25 lb", ["BJ's"]),
+                new ExactProductSummary("Regular size", "Brand", "20 lb", ["Walmart"])
+            ]
+        };
+
+        var bjsProduct = Assert.Single(row.GetExactProductsForStore(bjsId));
+        var walmartProduct = Assert.Single(row.GetExactProductsForStore(walmartId));
+
+        Assert.Equal("Club size", bjsProduct.Name);
+        Assert.Equal("Regular size", walmartProduct.Name);
+    }
 }

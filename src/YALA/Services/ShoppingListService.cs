@@ -22,6 +22,14 @@ public sealed class ShoppingListRow
     public IReadOnlyList<StorePrice> StorePrices { get; init; } = [];
     public IReadOnlyList<ExactProductSummary> ExactProducts { get; init; } = [];
     public bool IsAdHoc => CatalogItemId is null;
+
+    public IReadOnlyList<ExactProductSummary> GetExactProductsForStore(Guid storeId)
+    {
+        var storeName = StorePrices.FirstOrDefault(x => x.StoreId == storeId)?.StoreName;
+        return storeName is null
+            ? []
+            : ExactProducts.Where(product => product.StoreNames.Contains(storeName, StringComparer.OrdinalIgnoreCase)).ToArray();
+    }
 }
 
 public sealed record StorePrice(Guid StoreId, string StoreName, decimal? Price, bool IsAssigned, bool IsPreferred);

@@ -17,10 +17,11 @@
         {
             <span class="grocery-description">@Item.Description</span>
         }
-        @if (Item.ExactProducts.Count > 1)
+        @{ var visibleExactProducts = CurrentStoreId is Guid exactProductStoreId ? Item.GetExactProductsForStore(exactProductStoreId) : Item.ExactProducts; }
+        @if ((CurrentStoreId is not null && visibleExactProducts.Count > 0) || (CurrentStoreId is null && visibleExactProducts.Count > 1))
         {
             <div class="exact-product-list" aria-label="Exact products">
-                @foreach (var product in Item.ExactProducts)
+                @foreach (var product in visibleExactProducts)
                 {
                     <span><strong>@product.Name</strong>@if (!string.IsNullOrWhiteSpace(product.Brand) || !string.IsNullOrWhiteSpace(product.Size)) { <small>@string.Join(" · ", new[] { product.Brand, product.Size }.Where(x => !string.IsNullOrWhiteSpace(x)))</small> }@if (product.StoreNames.Count > 0) { <em>@string.Join(", ", product.StoreNames)</em> }</span>
                 }
