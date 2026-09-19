@@ -23,7 +23,7 @@
             <div class="exact-product-list" aria-label="Exact products">
                 @foreach (var product in visibleExactProducts)
                 {
-                    <span><strong>@product.Name</strong>@if (!string.IsNullOrWhiteSpace(product.Brand) || !string.IsNullOrWhiteSpace(product.Size)) { <small>@string.Join(" · ", new[] { product.Brand, product.Size }.Where(x => !string.IsNullOrWhiteSpace(x)))</small> }@if (product.StoreNames.Count > 0) { <em>@string.Join(", ", product.StoreNames)</em> }</span>
+                    <span><strong>@product.Name</strong>@if (product.IsPreferred && Item.ExactProducts.Count > 1) { <i class="preferred-store-mark">Preferred</i> }@if (!string.IsNullOrWhiteSpace(product.Brand) || !string.IsNullOrWhiteSpace(product.Size)) { <small>@string.Join(" · ", new[] { product.Brand, product.Size }.Where(x => !string.IsNullOrWhiteSpace(x)))</small> }@if (product.StoreNames.Count > 0) { <em>@string.Join(", ", product.StoreNames)</em> }</span>
                 }
             </div>
         }
@@ -54,7 +54,8 @@
                         <span>Also at</span>
                         @foreach (var store in otherStores)
                         {
-                            <strong>@store.StoreName@if (store.IsPreferred) { <i class="preferred-store-mark">Preferred</i> }</strong>
+                            var carriesPreferredProduct = Item.StoreCarriesPreferredExactProduct(store.StoreName);
+                            <strong>@store.StoreName@if (store.IsPreferred || carriesPreferredProduct) { <i class="preferred-store-mark">Preferred</i> }</strong>
                         }
                     </div>
                 }

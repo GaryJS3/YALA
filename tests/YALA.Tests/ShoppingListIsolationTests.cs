@@ -316,13 +316,15 @@ public sealed class ShoppingListIsolationTests
         var aldi = Assert.Single(stores, x => x.Name == "Aldi");
         var walmart = Assert.Single(stores, x => x.Name == "Walmart");
         await catalogService.SaveVariantAsync(item.Id, "Small bag", "Acme", "5 lb", false, storeIds: [aldi.Id]);
-        await catalogService.SaveVariantAsync(item.Id, "Large bag", "Acme", "20 lb", false, storeIds: [walmart.Id]);
+        await catalogService.SaveVariantAsync(item.Id, "Large bag", "Acme", "20 lb", true, storeIds: [walmart.Id]);
         await listService.AddAsync(item.Id);
 
         var row = Assert.Single(await listService.GetRowsAsync());
         Assert.Equal(2, row.ExactProducts.Count);
         Assert.Equal(["Aldi"], Assert.Single(row.ExactProducts, x => x.Name == "Small bag").StoreNames);
         Assert.Equal(["Walmart"], Assert.Single(row.ExactProducts, x => x.Name == "Large bag").StoreNames);
+        Assert.False(Assert.Single(row.ExactProducts, x => x.Name == "Small bag").IsPreferred);
+        Assert.True(Assert.Single(row.ExactProducts, x => x.Name == "Large bag").IsPreferred);
         Assert.Equal(2, row.StorePrices.Count);
     }
 

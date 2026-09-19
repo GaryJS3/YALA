@@ -78,22 +78,38 @@ else
     {
         <div class="item-page-grid">
             <section class="content-card item-section">
-                <div class="section-heading"><div><p class="eyebrow">WHERE TO FIND IT</p><h2>Store availability</h2></div><span class="item-section-count">@details.Stores.Count(x => x.IsAvailable) selected</span></div>
-                <p class="item-section-intro">Choose every store that normally carries this item. This does not assign it to a shopping trip.</p>
-                @if (details.Stores.Count == 0) { <p class="detail-empty">No stores yet. Add one from the Stores tab.</p> }
+                @{ var availableStores = details.Stores.Where(x => x.IsAvailable).ToArray(); }
+                <div class="section-heading"><div><p class="eyebrow">WHERE TO FIND IT</p><h2>Store availability</h2></div><span class="item-section-count">@availableStores.Length store@(availableStores.Length == 1 ? "" : "s")</span></div>
+                @if (editing)
+                {
+                    <p class="item-section-intro">Choose every store that normally carries this item. This does not assign it to a shopping trip.</p>
+                    @if (details.Stores.Count == 0) { <p class="detail-empty">No stores yet. Add one from the Stores tab.</p> }
+                    else
+                    {
+                        <div class="store-check-grid">
+                            @foreach (var store in details.Stores)
+                            {
+                                <label class="store-check @(store.IsAvailable ? "selected" : "") @(store.IsActive ? "" : "inactive")">
+                                    <input type="checkbox" checked="@store.IsAvailable" @onchange="e => SetStoreAsync(store.Id, (bool)(e.Value ?? false))" />
+                                    <span class="store-check-mark">✓</span><span><strong>@store.Name</strong><small>@(store.IsActive ? "Active store" : "Inactive store")</small></span>
+                                </label>
+                            }
+                        </div>
+                    }
+                }
+                else if (availableStores.Length == 0)
+                {
+                    <p class="detail-empty">Not currently available at any stores.</p>
+                }
                 else
                 {
-                    <div class="store-check-grid">
-                        @foreach (var store in details.Stores)
+                    <div class="item-store-summary" aria-label="Stores carrying this item">
+                        @foreach (var store in availableStores)
                         {
-                            <label class="store-check @(store.IsAvailable ? "selected" : "") @(store.IsActive ? "" : "inactive")">
-                                <input type="checkbox" checked="@store.IsAvailable" disabled="@(!editing)" @onchange="e => SetStoreAsync(store.Id, (bool)(e.Value ?? false))" />
-                                <span class="store-check-mark">✓</span><span><strong>@store.Name</strong><small>@(store.IsActive ? "Active store" : "Inactive store")</small></span>
-                            </label>
+                            <span class="@(store.IsActive ? "" : "inactive")"><i aria-hidden="true">✓</i>@store.Name@if (!store.IsActive) { <small>Inactive</small> }</span>
                         }
                     </div>
                 }
-                @if (!editing) { <p class="edit-prompt">Enter edit mode to change store availability.</p> }
             </section>
 
             <section class="content-card item-section">

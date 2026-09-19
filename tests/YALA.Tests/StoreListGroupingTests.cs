@@ -27,6 +27,7 @@ public sealed class StoreListGroupingTests
             group =>
             {
                 Assert.Equal("BJ's", group.Name);
+                Assert.Equal(bjsId, group.StoreId);
                 var entry = Assert.Single(group.Items);
                 Assert.Same(row, entry.Item);
                 Assert.Equal(bjsId, entry.StoreId);
@@ -34,6 +35,7 @@ public sealed class StoreListGroupingTests
             group =>
             {
                 Assert.Equal("Walmart", group.Name);
+                Assert.Equal(walmartId, group.StoreId);
                 var entry = Assert.Single(group.Items);
                 Assert.Same(row, entry.Item);
                 Assert.Equal(walmartId, entry.StoreId);
@@ -55,6 +57,7 @@ public sealed class StoreListGroupingTests
         var group = Assert.Single(ShoppingListService.GroupRowsByStore([row]));
 
         Assert.Equal("Walmart", group.Name);
+        Assert.Equal(storeId, group.StoreId);
         Assert.Equal(storeId, Assert.Single(group.Items).StoreId);
     }
 
@@ -73,8 +76,8 @@ public sealed class StoreListGroupingTests
             ],
             ExactProducts =
             [
-                new ExactProductSummary("Club size", "Brand", "25 lb", ["BJ's"]),
-                new ExactProductSummary("Regular size", "Brand", "20 lb", ["Walmart"])
+                new ExactProductSummary("Club size", "Brand", "25 lb", false, ["BJ's"]),
+                new ExactProductSummary("Regular size", "Brand", "20 lb", true, ["Walmart"])
             ]
         };
 
@@ -83,5 +86,9 @@ public sealed class StoreListGroupingTests
 
         Assert.Equal("Club size", bjsProduct.Name);
         Assert.Equal("Regular size", walmartProduct.Name);
+        Assert.False(bjsProduct.IsPreferred);
+        Assert.True(walmartProduct.IsPreferred);
+        Assert.False(row.StoreCarriesPreferredExactProduct("BJ's"));
+        Assert.True(row.StoreCarriesPreferredExactProduct("walmart"));
     }
 }
