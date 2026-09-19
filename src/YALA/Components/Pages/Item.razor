@@ -28,7 +28,7 @@ else
             else { <span aria-hidden="true">@Glyph(details?.CategoryName)</span> }
             @if (editing && !IsNew)
             {
-                <label class="item-photo-action">Change photo<InputFile accept="image/jpeg,image/png,image/webp" OnChange="UploadItemImageAsync" /></label>
+                <label class="item-photo-action">@(string.IsNullOrWhiteSpace(details?.ImagePath) ? "Add item photo" : "Replace item photo")<InputFile accept="image/jpeg,image/png,image/webp" OnChange="UploadItemImageAsync" /></label>
             }
         </div>
         <div class="item-hero-copy">
@@ -129,7 +129,10 @@ else
                         @if (!string.IsNullOrWhiteSpace(variant.ImagePath)) { <ImageLightbox Src="@($"/images/{variant.ImagePath}")" Alt="@variant.Name" TriggerClass="product-card-image" Loading="lazy" /> } else { <div class="product-placeholder">◇</div> }
                         <div class="variant-title"><strong>@variant.Name</strong>@if (variant.IsPreferred) { <span class="badge">Preferred</span> }</div>
                         @if (!string.IsNullOrWhiteSpace(variant.Brand) || !string.IsNullOrWhiteSpace(variant.Size)) { <small>@variant.Brand @variant.Size</small> }
-                        <div class="barcode-list">@foreach (var barcode in variant.Barcodes) { <span class="barcode-chip">@barcode.Barcode@if (editing) { <button type="button" aria-label="Remove barcode" @onclick="() => RemoveBarcodeAsync(barcode.Id)">×</button> }</span> }</div>
+                        @if (editingVariantId != variant.Id)
+                        {
+                            <div class="barcode-list">@foreach (var barcode in variant.Barcodes) { <span class="barcode-chip">@barcode.Barcode</span> }</div>
+                        }
                         @{ var variantStores = (editing ? details.Stores : details.Stores.Where(store => variant.StoreIds.Contains(store.Id))).ToArray(); }
                         @if (variantStores.Length > 0)
                         {
@@ -148,6 +151,32 @@ else
                         }
                         @if (editing)
                         {
+                            @if (editingVariantId == variant.Id)
+                            {
+                                var variantEdit = GetVariantEdit(variant);
+                                <div class="variant-edit-form">
+                                    <div class="form-grid">
+                                        <div class="form-field"><label for="variant-name-@variant.Id">Product name</label><input id="variant-name-@variant.Id" @bind="variantEdit.Name" /></div>
+                                        <div class="form-field"><label for="variant-brand-@variant.Id">Brand</label><input id="variant-brand-@variant.Id" @bind="variantEdit.Brand" /></div>
+                                        <div class="form-field"><label for="variant-size-@variant.Id">Size</label><input id="variant-size-@variant.Id" @bind="variantEdit.Size" /></div>
+                                    </div>
+                                    <label class="preferred-checkbox"><input type="checkbox" @bind="variantEdit.IsPreferred" /> Preferred product</label>
+                                    <div class="variant-barcode-editor">
+                                        <span class="variant-editor-label">Barcodes</span>
+                                        @for (var barcodeIndex = 0; barcodeIndex < variantEdit.Barcodes.Count; barcodeIndex++)
+                                        {
+                                            var index = barcodeIndex;
+                                            <div class="variant-barcode-row"><input @bind="variantEdit.Barcodes[index]" inputmode="numeric" aria-label="Barcode @(index + 1)" /><button type="button" class="text-button" @onclick="() => RemoveVariantBarcodeInput(variantEdit, index)">Remove</button></div>
+                                        }
+                                        <div class="variant-barcode-row"><input @bind="variantEdit.NewBarcode" inputmode="numeric" placeholder="Add barcode" aria-label="New barcode" /><button type="button" class="text-button" @onclick="() => AddVariantBarcodeInput(variantEdit)">Add barcode</button></div>
+                                    </div>
+                                    <div class="variant-edit-actions"><button type="button" class="button button-outline" @onclick="() => CancelVariantEdit(variant.Id)">Cancel</button><button type="button" class="button button-primary" disabled="@savingVariant" @onclick="() => SaveVariantEditAsync(variant.Id)">@(savingVariant ? "Saving…" : "Save product")</button></div>
+                                </div>
+                            }
+                            else
+                            {
+                                <button type="button" class="text-button edit-variant-action" @onclick="() => BeginVariantEdit(variant)">Edit product <span>✎</span></button>
+                            }
                             <label class="variant-image-upload">Product photo <InputFile accept="image/jpeg,image/png,image/webp" OnChange="args => UploadVariantImageAsync(variant.Id, args)" /></label>
                             @if (string.IsNullOrWhiteSpace(variant.ImagePath) && variant.Barcodes.Count > 0)
                             {
@@ -219,29 +248,56 @@ else
     [Parameter] public Guid? Id { get; set; }
     [SupplyParameterFromQuery(Name = "edit")] public bool EditOnLoad { get; set; }
     private bool IsNew => Id is null;
-    private bool loading = true, editing, saving, lookingUp, scanning;
+    private bool loading = true, editing, saving, savingVariant, lookingUp, scanning;
     private CatalogDetails? details;
     private IReadOnlyList<Category> categories = [];
     private string editName = string.Empty, aliasInput = string.Empty, variantName = string.Empty, variantBrand = string.Empty, variantSize = string.Empty, variantBarcode = string.Empty;
     private string? editDescription, error, success;
     private Guid? editCategoryId;
     private Guid? pendingVariantRemovalId;
+    private Guid? editingVariantId;
     private decimal editQuantity = 1;
     private bool editFavorite, editArchived, variantPreferred;
     private HashSet<Guid> variantStoreIds = [];
+    private readonly Dictionary<Guid, VariantEditState> variantEdits = [];
     private ProductLookupResult? lookupResult;
     private string? lookupMessage;
     private ElementReference scannerVideo;
     private IJSObjectReference? scannerModule;
     private DotNetObjectReference<Item>? dotNetReference;
 
-    protected override async Task OnParametersSetAsync() { loading = true; categories = await CatalogService.GetCategoriesAsync(); details = Id is Guid id ? await CatalogService.GetDetailsAsync(id) : null; editing = IsNew || EditOnLoad; CopyToEdit(); loading = false; }
+    protected override async Task OnParametersSetAsync() { loading = true; categories = await CatalogService.GetCategoriesAsync(); details = Id is Guid id ? await CatalogService.GetDetailsAsync(id) : null; editing = IsNew || EditOnLoad; editingVariantId = null; variantEdits.Clear(); CopyToEdit(); loading = false; }
     private void CopyToEdit() { editName = details?.Name ?? string.Empty; editDescription = details?.Description; editCategoryId = details?.CategoryId; editQuantity = details?.DefaultQuantity ?? 1; editFavorite = details?.IsFavorite ?? false; editArchived = details?.IsArchived ?? false; }
     private void BeginEdit() { CopyToEdit(); editing = true; error = success = null; }
     private void CancelEdit() { CopyToEdit(); editing = false; error = null; }
     private void CategoryChanged(ChangeEventArgs e) => editCategoryId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
     private async Task SaveAsync() { try { saving = true; var id = await CatalogService.SaveAsync(Id, editName, editDescription, editCategoryId, editQuantity); if (IsNew) { Navigation.NavigateTo($"/catalog/item/{id}"); return; } await CatalogService.SetFavoriteAsync(id, editFavorite); await CatalogService.SetArchivedAsync(id, editArchived); await ReloadAsync(); editing = false; success = "Item changes saved."; } catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { error = ex.Message; } finally { saving = false; } }
     private async Task ReloadAsync() { if (Id is Guid id) details = await CatalogService.GetDetailsAsync(id); }
+    private VariantEditState GetVariantEdit(ProductVariantEntry variant) => variantEdits.TryGetValue(variant.Id, out var edit)
+        ? edit
+        : variantEdits[variant.Id] = new VariantEditState(variant.Name, variant.Brand ?? string.Empty, variant.Size ?? string.Empty, variant.IsPreferred,
+            variant.Barcodes.Select(x => x.Barcode).ToList());
+    private void BeginVariantEdit(ProductVariantEntry variant) { variantEdits[variant.Id] = new VariantEditState(variant.Name, variant.Brand ?? string.Empty, variant.Size ?? string.Empty, variant.IsPreferred, variant.Barcodes.Select(x => x.Barcode).ToList()); editingVariantId = variant.Id; error = null; }
+    private void CancelVariantEdit(Guid variantId) { variantEdits.Remove(variantId); editingVariantId = null; error = null; }
+    private void AddVariantBarcodeInput(VariantEditState edit) { if (!string.IsNullOrWhiteSpace(edit.NewBarcode)) { edit.Barcodes.Add(edit.NewBarcode); edit.NewBarcode = string.Empty; } }
+    private void RemoveVariantBarcodeInput(VariantEditState edit, int index) { if (index >= 0 && index < edit.Barcodes.Count) edit.Barcodes.RemoveAt(index); }
+    private async Task SaveVariantEditAsync(Guid variantId)
+    {
+        if (!variantEdits.TryGetValue(variantId, out var edit)) return;
+        try
+        {
+            savingVariant = true;
+            AddVariantBarcodeInput(edit);
+            await CatalogService.UpdateVariantAsync(variantId, edit.Name, edit.Brand, edit.Size, edit.IsPreferred, edit.Barcodes);
+            await ReloadAsync();
+            variantEdits.Remove(variantId);
+            editingVariantId = null;
+            error = null;
+            success = "Exact product changes saved.";
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or DbUpdateException) { error = ex.Message; }
+        finally { savingVariant = false; }
+    }
     private async Task SetStoreAsync(Guid storeId, bool available) => await RunDetailActionAsync(() => CatalogService.SetStoreAvailabilityAsync(Id!.Value, storeId, available));
     private async Task SetVariantStoreAsync(Guid variantId, Guid storeId, bool available) => await RunDetailActionAsync(() => CatalogService.SetVariantStoreAvailabilityAsync(variantId, storeId, available));
     private void SetPendingVariantStore(Guid storeId, bool available)
@@ -266,6 +322,7 @@ else
         try
         {
             success = null;
+            await ImageService.PromoteBestVariantImageToItemIfMissingAsync(Id!.Value);
             var barcode = new string(variantBarcode.Where(char.IsLetterOrDigit).ToArray());
             var variantId = await CatalogService.SaveVariantAsync(Id!.Value, variantName, variantBrand, variantSize, variantPreferred, variantBarcode, variantStoreIds);
             var lookupImageUrl = lookupResult?.Barcode == barcode ? lookupResult.ImageUrl : null;
@@ -277,6 +334,7 @@ else
                     success = "Product added, but its lookup photo could not be saved. You can upload a photo from the product card.";
                 }
             }
+            await ImageService.PromoteBestVariantImageToItemIfMissingAsync(Id.Value);
             error = null;
             await ReloadAsync();
             variantName = variantBrand = variantSize = variantBarcode = string.Empty;
@@ -292,7 +350,12 @@ else
     }
     private async Task RemoveBarcodeAsync(Guid barcodeId) => await RunDetailActionAsync(() => CatalogService.RemoveBarcodeAsync(barcodeId));
     private async Task UploadItemImageAsync(InputFileChangeEventArgs args) => await RunDetailActionAsync(() => ImageService.SaveCatalogItemImageAsync(Id!.Value, args.File));
-    private async Task UploadVariantImageAsync(Guid variantId, InputFileChangeEventArgs args) => await RunDetailActionAsync(() => ImageService.SaveVariantImageAsync(variantId, args.File));
+    private async Task UploadVariantImageAsync(Guid variantId, InputFileChangeEventArgs args) => await RunDetailActionAsync(async () =>
+    {
+        await ImageService.PromoteBestVariantImageToItemIfMissingAsync(Id!.Value);
+        await ImageService.SaveVariantImageAsync(variantId, args.File);
+        await ImageService.PromoteBestVariantImageToItemIfMissingAsync(Id.Value);
+    });
     private async Task FindVariantPhotoAsync(Guid variantId, string barcode)
     {
         try
@@ -304,7 +367,9 @@ else
                 error = "No product photo was found for that barcode.";
                 return;
             }
+            await ImageService.PromoteBestVariantImageToItemIfMissingAsync(Id!.Value);
             await ImageService.SaveVariantImageFromUrlAsync(variantId, result.ImageUrl);
+            await ImageService.PromoteBestVariantImageToItemIfMissingAsync(Id.Value);
             await ReloadAsync();
             error = null;
             success = "The barcode photo was saved to this exact product.";
@@ -358,4 +423,13 @@ else
         if (scannerModule is not null) { try { await scannerModule.DisposeAsync(); } catch (JSDisconnectedException) { } }
     }
     private static string Glyph(string? category) => category?.ToLowerInvariant() switch { "produce" => "✿", "dairy" => "◒", "meat" => "⌁", "frozen" => "❄", "bakery" => "◌", "drinks" => "◍", "pets" => "♧", "household" => "⌂", _ => "✳" };
+    private sealed class VariantEditState(string name, string brand, string size, bool isPreferred, List<string> barcodes)
+    {
+        public string Name { get; set; } = name;
+        public string Brand { get; set; } = brand;
+        public string Size { get; set; } = size;
+        public bool IsPreferred { get; set; } = isPreferred;
+        public List<string> Barcodes { get; } = barcodes;
+        public string NewBarcode { get; set; } = string.Empty;
+    }
 }

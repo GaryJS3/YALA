@@ -316,6 +316,32 @@ public sealed class ShoppingListIsolationTests
     }
 
     [Fact]
+    public async Task ExactProductEditingUpdatesDetailsPreferredStateAndBarcodes()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+        var (_, item) = await fixture.SeedSingleHouseholdAsync();
+        var householdService = fixture.CreateHouseholdService("gary");
+        var catalogService = fixture.CreateCatalogService(householdService);
+
+        var firstId = await catalogService.SaveVariantAsync(item.Id, "Small bag", "Acme", "5 lb", true, "12345678");
+        var secondId = await catalogService.SaveVariantAsync(item.Id, "Large bag", "Acme", "20 lb", false, "87654321");
+
+        await catalogService.UpdateVariantAsync(firstId, "Family bag", "New Acme", "10 lb", true, ["11112222", "33334444"]);
+
+        var variants = (await catalogService.GetDetailsAsync(item.Id))!.Variants;
+        var first = Assert.Single(variants, x => x.Id == firstId);
+        var second = Assert.Single(variants, x => x.Id == secondId);
+        Assert.Equal("Family bag", first.Name);
+        Assert.Equal("New Acme", first.Brand);
+        Assert.Equal("10 lb", first.Size);
+        Assert.True(first.IsPreferred);
+        Assert.Equal(["11112222", "33334444"], first.Barcodes.Select(x => x.Barcode).ToArray());
+        Assert.False(second.IsPreferred);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => catalogService.UpdateVariantAsync(firstId, first.Name, first.Brand, first.Size, false, ["87654321"]));
+    }
+
+    [Fact]
     public async Task ShoppingListShowsMultipleExactProductsWithTheirStores()
     {
         await using var fixture = await TestFixture.CreateAsync();

@@ -29,6 +29,35 @@ public sealed class ImageService(
         notifier.Notify(household.HouseholdId);
     }
 
+    public async Task<bool> PromoteBestVariantImageToItemIfMissingAsync(Guid catalogItemId, CancellationToken cancellationToken = default)
+    {
+        var household = await RequireHouseholdAsync(cancellationToken);
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var item = await db.CatalogItems.Include(x => x.Variants)
+            .SingleOrDefaultAsync(x => x.Id == catalogItemId && x.HouseholdId == household.HouseholdId, cancellationToken)
+            ?? throw new InvalidOperationException("That item is not in this household.");
+        if (!string.IsNullOrWhiteSpace(item.ImagePath)) return false;
+
+        var sourcePath = item.Variants
+            .Where(x => !x.IsArchived && !string.IsNullOrWhiteSpace(x.ImagePath))
+            .OrderByDescending(x => x.IsPreferred).ThenBy(x => x.Name)
+            .Select(x => x.ImagePath!)
+            .FirstOrDefault();
+        if (sourcePath is null) return false;
+
+        var sourceFile = ResolveStoredPath(sourcePath, household.HouseholdId, "variants");
+        if (sourceFile is null || !File.Exists(sourceFile)) return false;
+        await using var source = new FileStream(sourceFile, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
+        using var content = await ReadImageAsync(source, cancellationToken);
+        var itemImagePath = await SaveContentAsync(household.HouseholdId, "items", content, cancellationToken);
+        item.ImagePath = itemImagePath;
+        item.UpdatedAt = DateTimeOffset.UtcNow;
+        try { await db.SaveChangesAsync(cancellationToken); }
+        catch { DeleteStoredImage(itemImagePath, household.HouseholdId, "items"); throw; }
+        notifier.Notify(household.HouseholdId);
+        return true;
+    }
+
     public async Task SaveVariantImageAsync(Guid variantId, IBrowserFile file, CancellationToken cancellationToken = default)
     {
         var household = await RequireHouseholdAsync(cancellationToken);

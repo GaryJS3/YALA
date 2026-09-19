@@ -208,6 +208,50 @@ public sealed class CatalogService(IDbContextFactory<ApplicationDbContext> dbCon
         return product.Id;
     }
 
+    public async Task UpdateVariantAsync(Guid variantId, string name, string? brand, string? size, bool preferred,
+        IReadOnlyCollection<string>? barcodes = null, CancellationToken cancellationToken = default)
+    {
+        var household = await RequireHouseholdAsync(cancellationToken);
+        var cleanName = name.Trim();
+        if (cleanName.Length is < 1 or > 200) throw new ArgumentException("Product names must be between 1 and 200 characters.");
+
+        var cleanBarcodes = (barcodes ?? [])
+            .Select(barcode => new string(barcode.Where(char.IsLetterOrDigit).ToArray()))
+            .Where(barcode => barcode.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (cleanBarcodes.Any(barcode => barcode.Length is < 4 or > 64))
+            throw new ArgumentException("Enter barcodes with 4 to 64 letters or numbers.");
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var product = await db.ProductVariants.SingleOrDefaultAsync(x => x.Id == variantId && x.HouseholdId == household.HouseholdId && !x.IsArchived, cancellationToken)
+            ?? throw new InvalidOperationException("That product is not in this household.");
+
+        if (cleanBarcodes.Length > 0 && await db.ProductBarcodes.AnyAsync(x => x.HouseholdId == household.HouseholdId
+            && x.ProductVariantId != variantId && cleanBarcodes.Contains(x.Barcode), cancellationToken))
+            throw new InvalidOperationException("One or more barcodes are already recorded in this household.");
+
+        if (preferred)
+        {
+            var otherVariants = await db.ProductVariants.Where(x => x.HouseholdId == household.HouseholdId
+                && x.CatalogItemId == product.CatalogItemId && x.Id != variantId).ToListAsync(cancellationToken);
+            foreach (var otherVariant in otherVariants) otherVariant.IsPreferred = false;
+        }
+
+        var existingBarcodes = await db.ProductBarcodes.Where(x => x.HouseholdId == household.HouseholdId && x.ProductVariantId == variantId).ToListAsync(cancellationToken);
+        foreach (var existingBarcode in existingBarcodes.Where(x => !cleanBarcodes.Contains(x.Barcode, StringComparer.OrdinalIgnoreCase)))
+            db.ProductBarcodes.Remove(existingBarcode);
+        foreach (var barcode in cleanBarcodes.Where(x => !existingBarcodes.Any(existing => string.Equals(existing.Barcode, x, StringComparison.OrdinalIgnoreCase))))
+            db.ProductBarcodes.Add(new ProductBarcode { HouseholdId = household.HouseholdId, ProductVariantId = variantId, Barcode = barcode });
+
+        product.Name = cleanName;
+        product.Brand = string.IsNullOrWhiteSpace(brand) ? null : brand.Trim();
+        product.Size = string.IsNullOrWhiteSpace(size) ? null : size.Trim();
+        product.IsPreferred = preferred;
+        await db.SaveChangesAsync(cancellationToken);
+        notifier.Notify(household.HouseholdId);
+    }
+
     public async Task SetVariantStoreAvailabilityAsync(Guid variantId, Guid storeId, bool isAvailable, CancellationToken cancellationToken = default)
     {
         var household = await RequireHouseholdAsync(cancellationToken);
