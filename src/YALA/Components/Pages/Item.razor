@@ -40,7 +40,7 @@ else
         </div>
         <div class="item-hero-actions">
             @if (!editing) { <button class="button button-primary" type="button" @onclick="BeginEdit">Edit item <span>✎</span></button> }
-            else if (!IsNew) { <button class="button button-outline" type="button" @onclick="CancelEdit">Cancel</button> }
+            else { <span class="item-editing-state"><span class="item-editing-dot"></span> Editing</span> }
         </div>
     </section>
 
@@ -64,7 +64,10 @@ else
                     <label><input type="checkbox" @bind="editArchived" /> Archive this item</label>
                 </div>
             }
-            <button type="button" class="button button-primary" disabled="@saving" @onclick="SaveAsync">@(saving ? "Saving…" : IsNew ? "Create item" : "Save changes") <span>↗</span></button>
+            <div class="item-edit-actions">
+                @if (!IsNew) { <button type="button" class="button button-outline" @onclick="CancelEdit">Discard changes</button> }
+                <button type="button" class="button button-primary" disabled="@saving" @onclick="SaveAsync">@(saving ? "Saving…" : IsNew ? "Create item" : "Save changes") <span>↗</span></button>
+            </div>
         </section>
     }
 
