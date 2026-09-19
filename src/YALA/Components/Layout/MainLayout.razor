@@ -37,7 +37,6 @@
         </aside>
         <main class="main-content">
             @Body
-            <footer class="page-footer">YALA <span>·</span> @BuildLabel</footer>
         </main>
     </div>
 </div>
@@ -57,6 +56,9 @@
         var assembly = typeof(MainLayout).Assembly;
         var version = assembly.GetName().Version?.ToString(3) ?? "unknown";
         var build = assembly.ManifestModule.ModuleVersionId.ToString("N")[..8].ToLowerInvariant();
-        return $"v{version} · build {build}";
+        var buildDate = assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyMetadataAttribute), inherit: false)
+            .OfType<System.Reflection.AssemblyMetadataAttribute>()
+            .FirstOrDefault(attribute => attribute.Key == "BuildDate")?.Value ?? "unknown date";
+        return $"v{version} · build {build} · {buildDate}";
     }
 }
