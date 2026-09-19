@@ -43,6 +43,7 @@ Pantry inventory, expiration tracking, meal planning, recipes, nutrition trackin
 
 ## Progress notes
 
+- 2026-09-19: Removed store-assignment dropdowns from saved catalog items on the main shopping list. Saved items now show their configured available stores as read-only labels; store selection remains available for ad-hoc list entries.
 - 2026-09-19: Catalog items without their own uploaded image now display the preferred exact-product image when available, falling back to the first named product image. A directly uploaded item image continues to take priority.
 - 2026-09-19: Shopping-list item rows now distinguish multiple exact products and show the stores carrying each one. Store-grouped rows omit redundant assignment controls when availability is already configured, while unmatched typed entries remain ad-hoc list items with optional store assignment instead of being silently saved to the catalog. The Catalog page lists current ad-hoc entries and can promote them into full catalog items without losing their list state, or delete them after inline confirmation.
 - 2026-09-19: Added per-product store availability to the item page. Exact products can now be assigned to one or more stores during creation or from their product cards, allowing store-specific brands and package sizes while preserving offer and price history when availability changes.

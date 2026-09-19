@@ -26,6 +26,16 @@
                 }
             </div>
         }
+        @if (!Item.IsAdHoc && !ShowPrices && Item.StorePrices.Count > 0)
+        {
+            <div class="available-store-list" aria-label="Available stores">
+                <span>Available at</span>
+                @foreach (var store in Item.StorePrices)
+                {
+                    <strong>@store.StoreName</strong>
+                }
+            </div>
+        }
         @if (ShowPrices && Item.StorePrices.Count > 0)
         {
             <div class="store-price-list">
@@ -37,7 +47,7 @@
         }
     </div>
     <div class="row-end-controls">
-        @if (ShowStoreAssignment && Stores.Count > 0)
+        @if (Item.IsAdHoc && ShowStoreAssignment && Stores.Count > 0)
         {
             <select class="assignment-select" aria-label="Store for @Item.Name" value="@(Item.AssignedStoreId?.ToString() ?? "")" @onchange="AssignChangedAsync">
                 <option value="">Store…</option>
