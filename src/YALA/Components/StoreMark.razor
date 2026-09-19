@@ -1,19 +1,29 @@
-<span class="store-mark @(ShowName ? "store-mark-named" : "store-mark-compact")" aria-label="@Name" title="@Name">
-    <span class="store-mark-image" aria-hidden="true">
-        @if (!string.IsNullOrWhiteSpace(ImagePath))
-        {
-            <img src="/images/@ImagePath" alt="" loading="lazy" />
-        }
-        else
-        {
-            <span>@Initial</span>
-        }
+@if (!ShowName && !string.IsNullOrWhiteSpace(ImagePath))
+{
+    <span class="store-mark store-mark-compact store-mark-logo" aria-label="@Name" title="@Name">
+        <img src="/images/@ImagePath" alt="" loading="lazy" />
     </span>
-    @if (ShowName)
-    {
+}
+else if (!ShowName)
+{
+    <span class="store-mark store-mark-compact store-mark-fallback" title="@Name">@Name</span>
+}
+else
+{
+    <span class="store-mark store-mark-named" aria-label="@Name" title="@Name">
+        <span class="store-mark-image" aria-hidden="true">
+            @if (!string.IsNullOrWhiteSpace(ImagePath))
+            {
+                <img src="/images/@ImagePath" alt="" loading="lazy" />
+            }
+            else
+            {
+                <span>@Initial</span>
+            }
+        </span>
         <span class="store-mark-name">@Name</span>
-    }
-</span>
+    </span>
+}
 
 @code {
     [Parameter, EditorRequired] public string Name { get; set; } = string.Empty;
