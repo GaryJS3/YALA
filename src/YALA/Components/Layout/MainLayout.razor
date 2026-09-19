@@ -14,7 +14,7 @@
                     <span class="account-name">@context.User.Identity?.Name</span>
                     <form action="/Account/Logout" method="post">
                         <AntiforgeryToken />
-                        <input type="hidden" name="ReturnUrl" value="/Account/Login" />
+                        <input type="hidden" name="ReturnUrl" value="Account/Login" />
                         <button type="submit" class="quiet-button">Log out</button>
                     </form>
                 </div>
