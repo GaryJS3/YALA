@@ -56,9 +56,25 @@
         var assembly = typeof(MainLayout).Assembly;
         var version = assembly.GetName().Version?.ToString(3) ?? "unknown";
         var build = assembly.ManifestModule.ModuleVersionId.ToString("N")[..8].ToLowerInvariant();
-        var buildDate = assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyMetadataAttribute), inherit: false)
+        var buildTimestamp = assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyMetadataAttribute), inherit: false)
             .OfType<System.Reflection.AssemblyMetadataAttribute>()
-            .FirstOrDefault(attribute => attribute.Key == "BuildDate")?.Value ?? "unknown date";
-        return $"v{version} · build {build} · {buildDate}";
+            .FirstOrDefault(attribute => attribute.Key == "BuildTimestampUtc")?.Value;
+        var buildTime = FormatEasternBuildTime(buildTimestamp);
+        return $"v{version} · build {build} · {buildTime}";
+    }
+
+    private static string FormatEasternBuildTime(string? value)
+    {
+        if (!DateTime.TryParse(value, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+                out var utcBuildTime))
+        {
+            return "unknown build time";
+        }
+
+        var easternTimeZone = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+        var easternBuildTime = TimeZoneInfo.ConvertTimeFromUtc(utcBuildTime, easternTimeZone);
+        var abbreviation = easternTimeZone.IsDaylightSavingTime(easternBuildTime) ? "EDT" : "EST";
+        return $"{easternBuildTime:yyyy-MM-dd h:mm tt} {abbreviation}";
     }
 }
