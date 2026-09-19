@@ -17,8 +17,8 @@ else if (store is null)
 else
 {
     <section class="item-hero store-hero">
-        <div class="item-portrait store-portrait">
-            @if (!string.IsNullOrWhiteSpace(store.ImagePath)) { <img src="/images/@store.ImagePath" alt="@store.Name logo" /> } else { <span aria-hidden="true">⌂</span> }
+        <div class="item-portrait store-portrait" aria-label="@store.Name logo">
+            @if (!string.IsNullOrWhiteSpace(store.ImagePath)) { <img src="/images/@store.ImagePath" alt="" /> } else { <span aria-hidden="true">⌂</span> }
             @if (editing) { <label class="item-photo-action">@(string.IsNullOrWhiteSpace(store.ImagePath) ? "Add logo or photo" : "Change logo or photo")<InputFile accept="image/jpeg,image/png,image/webp" OnChange="UploadStoreImageAsync" /></label> }
         </div>
         <div class="item-hero-copy"><p class="eyebrow">YOUR HOUSEHOLD STORE</p><h1>@store.Name</h1><p>@store.OfferCount item@(store.OfferCount == 1 ? "" : "s") tracked at this store.</p><div class="item-status-line"><span class="item-status @(store.IsActive ? "" : "archived")">@(store.IsActive ? "Active store" : "Paused store")</span></div></div>

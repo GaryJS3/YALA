@@ -148,7 +148,7 @@ app.MapGet("/images/households/{householdId:guid}/{kind}/{fileName}", async (
     CancellationToken cancellationToken) =>
 {
     var userId = user.FindFirstValue(ClaimTypes.NameIdentifier);
-    if (userId is null || kind is not ("items" or "variants") || string.IsNullOrWhiteSpace(fileName) || fileName != Path.GetFileName(fileName))
+    if (userId is null || kind is not ("items" or "variants" or "stores") || string.IsNullOrWhiteSpace(fileName) || fileName != Path.GetFileName(fileName))
     {
         return Results.NotFound();
     }
