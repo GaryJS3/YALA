@@ -1,6 +1,6 @@
 // Set up event handlers
-const reconnectModal = document.getElementById("components-reconnect-modal");
-reconnectModal.addEventListener("components-reconnect-state-changed", handleReconnectStateChanged);
+const reconnectBanner = document.getElementById("components-reconnect-modal");
+reconnectBanner.addEventListener("components-reconnect-state-changed", handleReconnectStateChanged);
 
 const retryButton = document.getElementById("components-reconnect-button");
 retryButton.addEventListener("click", retry);
@@ -10,9 +10,9 @@ resumeButton.addEventListener("click", resume);
 
 function handleReconnectStateChanged(event) {
     if (event.detail.state === "show") {
-        reconnectModal.showModal();
+        reconnectBanner.hidden = false;
     } else if (event.detail.state === "hide") {
-        reconnectModal.close();
+        reconnectBanner.hidden = true;
     } else if (event.detail.state === "failed") {
         document.addEventListener("visibilitychange", retryWhenDocumentBecomesVisible);
     } else if (event.detail.state === "rejected") {
@@ -36,7 +36,7 @@ async function retry() {
             if (!resumeSuccessful) {
                 location.reload();
             } else {
-                reconnectModal.close();
+                reconnectBanner.hidden = true;
             }
         }
     } catch (err) {
@@ -52,7 +52,7 @@ async function resume() {
             location.reload();
         }
     } catch {
-        reconnectModal.classList.replace("components-reconnect-paused", "components-reconnect-resume-failed");
+        reconnectBanner.classList.replace("components-reconnect-paused", "components-reconnect-resume-failed");
     }
 }
 

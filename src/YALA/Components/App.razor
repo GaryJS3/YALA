@@ -16,7 +16,16 @@
 <body>
     <Routes @rendermode="PageRenderMode" />
     <ReconnectModal />
-    <script src="/blazor.web.js"></script>
+    <script src="/blazor.web.js" autostart="false"></script>
+    <script>
+        Blazor.start({
+            circuit: {
+                reconnectionOptions: {
+                    retryIntervalMilliseconds: 3000
+                }
+            }
+        });
+    </script>
     <script src="@Assets["Components/Account/Shared/PasskeySubmit.razor.js"]" type="module"></script>
 </body>
 

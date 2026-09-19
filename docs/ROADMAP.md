@@ -43,6 +43,7 @@ Pantry inventory, expiration tracking, meal planning, recipes, nutrition trackin
 
 ## Progress notes
 
+- 2026-09-19: Replaced the blocking Blazor reconnect dialog with a compact, accessible status banner at the top of the viewport and set automatic reconnect attempts to a consistent three-second interval.
 - 2026-09-19: Exact products can now be removed from the item editor after inline confirmation. Removal archives the product and disables its store availability while preserving barcodes, offers, prices, and purchase history.
 - 2026-09-19: Removed store-assignment dropdowns from saved catalog items on the main shopping list. Saved items now show their configured available stores as read-only labels; store selection remains available for ad-hoc list entries.
 - 2026-09-19: Catalog items without their own uploaded image now display the preferred exact-product image when available, falling back to the first named product image. A directly uploaded item image continues to take priority.
