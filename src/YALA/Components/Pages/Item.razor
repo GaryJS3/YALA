@@ -1,0 +1,155 @@
+@page "/catalog/item/new"
+@page "/catalog/item/{Id:guid}"
+@attribute [Authorize]
+@inject CatalogService CatalogService
+@inject ImageService ImageService
+@inject NavigationManager Navigation
+
+<PageTitle>@(details?.Name ?? (IsNew ? "New item" : "Item")) · YALA</PageTitle>
+
+<nav class="item-breadcrumb" aria-label="Breadcrumb"><a href="/catalog">Catalog</a><span>/</span><span>@(details?.Name ?? "New item")</span></nav>
+
+@if (loading)
+{
+    <div class="loading-surface"><span class="spinner"></span> Loading item…</div>
+}
+else if (!IsNew && details is null)
+{
+    <section class="empty-state"><div class="empty-illustration">?</div><h1>Item not found</h1><p class="muted-copy">It may have been removed or belong to another household.</p><a class="button button-primary" href="/catalog">Back to catalog</a></section>
+}
+else
+{
+    <section class="item-hero">
+        <div class="item-portrait">
+            @if (!string.IsNullOrWhiteSpace(details?.ImagePath)) { <img src="/images/@details.ImagePath" alt="@details.Name" /> }
+            else { <span aria-hidden="true">@Glyph(details?.CategoryName)</span> }
+            @if (editing && !IsNew)
+            {
+                <label class="item-photo-action">Change photo<InputFile accept="image/jpeg,image/png,image/webp" OnChange="UploadItemImageAsync" /></label>
+            }
+        </div>
+        <div class="item-hero-copy">
+            <p class="eyebrow">@(IsNew ? "A NEW HOUSEHOLD REGULAR" : details!.CategoryName?.ToUpperInvariant() ?? "UNCATEGORIZED")</p>
+            <h1>@(IsNew ? "New item" : details!.Name)</h1>
+            @if (!IsNew) { <p>@(details!.Description ?? "No description yet.")</p> }
+            <div class="item-status-line">
+                @if (details?.IsFavorite == true) { <span class="item-status favorite">★ Favorite</span> }
+                @if (details?.IsArchived == true) { <span class="item-status archived">Archived</span> }
+                @if (details is not null) { <span class="item-status">@details.DefaultQuantity.ToString("0.##") default qty</span> }
+            </div>
+        </div>
+        <div class="item-hero-actions">
+            @if (!editing) { <button class="button button-primary" type="button" @onclick="BeginEdit">Edit item <span>✎</span></button> }
+            else if (!IsNew) { <button class="button button-outline" type="button" @onclick="CancelEdit">Cancel</button> }
+        </div>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(error)) { <p class="notice error" role="alert">@error</p> }
+    @if (!string.IsNullOrWhiteSpace(success)) { <p class="notice" role="status">@success</p> }
+
+    @if (editing)
+    {
+        <section class="item-edit-card content-card">
+            <div class="section-heading"><div><p class="eyebrow">ITEM DETAILS</p><h2>@(IsNew ? "Build the basics" : "Make it yours")</h2></div></div>
+            <div class="form-grid">
+                <div class="form-field"><label for="item-name">Friendly name</label><input id="item-name" @bind="editName" @bind:event="oninput" maxlength="120" placeholder="Whole milk" /></div>
+                <div class="form-field"><label for="item-category">Category</label><select id="item-category" value="@editCategoryId" @onchange="CategoryChanged"><option value="">No category</option>@foreach (var category in categories) { <option value="@category.Id">@category.Name</option> }</select></div>
+                <div class="form-field"><label for="item-description">Description</label><input id="item-description" @bind="editDescription" @bind:event="oninput" placeholder="1 gallon, whole" /></div>
+                <div class="form-field"><label for="item-quantity">Default quantity</label><input id="item-quantity" type="number" min="0.25" step="0.25" @bind="editQuantity" @bind:event="oninput" /></div>
+            </div>
+            @if (!IsNew)
+            {
+                <div class="item-toggle-row">
+                    <label><input type="checkbox" @bind="editFavorite" /> <span>★</span> Keep in favorites</label>
+                    <label><input type="checkbox" @bind="editArchived" /> Archive this item</label>
+                </div>
+            }
+            <button type="button" class="button button-primary" disabled="@saving" @onclick="SaveAsync">@(saving ? "Saving…" : IsNew ? "Create item" : "Save changes") <span>↗</span></button>
+        </section>
+    }
+
+    @if (!IsNew && details is not null)
+    {
+        <div class="item-page-grid">
+            <section class="content-card item-section">
+                <div class="section-heading"><div><p class="eyebrow">WHERE TO FIND IT</p><h2>Store availability</h2></div><span class="item-section-count">@details.Stores.Count(x => x.IsAvailable) selected</span></div>
+                <p class="item-section-intro">Choose every store that normally carries this item. This does not assign it to a shopping trip.</p>
+                @if (details.Stores.Count == 0) { <p class="detail-empty">No stores yet. Add one from the Stores tab.</p> }
+                else
+                {
+                    <div class="store-check-grid">
+                        @foreach (var store in details.Stores)
+                        {
+                            <label class="store-check @(store.IsAvailable ? "selected" : "") @(store.IsActive ? "" : "inactive")">
+                                <input type="checkbox" checked="@store.IsAvailable" disabled="@(!editing)" @onchange="e => SetStoreAsync(store.Id, (bool)(e.Value ?? false))" />
+                                <span class="store-check-mark">✓</span><span><strong>@store.Name</strong><small>@(store.IsActive ? "Active store" : "Inactive store")</small></span>
+                            </label>
+                        }
+                    </div>
+                }
+                @if (!editing) { <p class="edit-prompt">Enter edit mode to change store availability.</p> }
+            </section>
+
+            <section class="content-card item-section">
+                <div class="section-heading"><div><p class="eyebrow">SEARCH SHORTCUTS</p><h2>Aliases</h2></div><span class="item-section-count">@details.Aliases.Count</span></div>
+                <div class="alias-chips">@foreach (var alias in details.Aliases) { <span class="alias-chip">@alias.Alias@if (editing) { <button type="button" aria-label="Remove alias @alias.Alias" @onclick="() => RemoveAliasAsync(alias.Id)">×</button> }</span> }@if (details.Aliases.Count == 0) { <span class="detail-empty">No aliases yet.</span> }</div>
+                @if (editing) { <div class="detail-inline-form"><input @bind="aliasInput" @bind:event="oninput" placeholder="e.g. Kitty food" aria-label="New item alias" /><button type="button" class="button button-outline" @onclick="AddAliasAsync">Add <span>+</span></button></div> }
+            </section>
+        </div>
+
+        <section class="content-card item-section item-products">
+            <div class="section-heading"><div><p class="eyebrow">BRANDS, SIZES & BARCODES</p><h2>Exact products</h2></div><span class="item-section-count">@details.Variants.Count</span></div>
+            @if (details.Variants.Count == 0) { <p class="detail-empty">Add an exact product when the brand or size matters.</p> }
+            <div class="product-grid">
+                @foreach (var variant in details.Variants)
+                {
+                    <article class="product-card">
+                        @if (!string.IsNullOrWhiteSpace(variant.ImagePath)) { <img src="/images/@variant.ImagePath" alt="@variant.Name" /> } else { <div class="product-placeholder">◇</div> }
+                        <div class="variant-title"><strong>@variant.Name</strong>@if (variant.IsPreferred) { <span class="badge">Preferred</span> }</div>
+                        @if (!string.IsNullOrWhiteSpace(variant.Brand) || !string.IsNullOrWhiteSpace(variant.Size)) { <small>@variant.Brand @variant.Size</small> }
+                        <div class="barcode-list">@foreach (var barcode in variant.Barcodes) { <span class="barcode-chip">@barcode.Barcode@if (editing) { <button type="button" aria-label="Remove barcode" @onclick="() => RemoveBarcodeAsync(barcode.Id)">×</button> }</span> }</div>
+                        @if (editing) { <label class="variant-image-upload">Product photo <InputFile accept="image/jpeg,image/png,image/webp" OnChange="args => UploadVariantImageAsync(variant.Id, args)" /></label> }
+                    </article>
+                }
+            </div>
+            @if (editing)
+            {
+                <div class="variant-entry">
+                    <h3>Add an exact product</h3>
+                    <div class="form-grid"><div class="form-field"><label>Product name</label><input @bind="variantName" @bind:event="oninput" placeholder="Purina ONE Indoor Advantage" /></div><div class="form-field"><label>Brand</label><input @bind="variantBrand" @bind:event="oninput" placeholder="Purina ONE" /></div><div class="form-field"><label>Size</label><input @bind="variantSize" @bind:event="oninput" placeholder="16 lb" /></div><div class="form-field"><label>Barcode</label><input @bind="variantBarcode" @bind:event="oninput" inputmode="numeric" placeholder="017800123456" /></div></div>
+                    <label class="preferred-checkbox"><input type="checkbox" @bind="variantPreferred" /> Preferred product</label><button type="button" class="button button-outline" @onclick="AddVariantAsync">Add product <span>+</span></button>
+                </div>
+            }
+        </section>
+    }
+}
+
+@code {
+    [Parameter] public Guid? Id { get; set; }
+    private bool IsNew => Id is null;
+    private bool loading = true, editing, saving;
+    private CatalogDetails? details;
+    private IReadOnlyList<Category> categories = [];
+    private string editName = string.Empty, aliasInput = string.Empty, variantName = string.Empty, variantBrand = string.Empty, variantSize = string.Empty, variantBarcode = string.Empty;
+    private string? editDescription, error, success;
+    private Guid? editCategoryId;
+    private decimal editQuantity = 1;
+    private bool editFavorite, editArchived, variantPreferred;
+
+    protected override async Task OnParametersSetAsync() { loading = true; categories = await CatalogService.GetCategoriesAsync(); details = Id is Guid id ? await CatalogService.GetDetailsAsync(id) : null; editing = IsNew; CopyToEdit(); loading = false; }
+    private void CopyToEdit() { editName = details?.Name ?? string.Empty; editDescription = details?.Description; editCategoryId = details?.CategoryId; editQuantity = details?.DefaultQuantity ?? 1; editFavorite = details?.IsFavorite ?? false; editArchived = details?.IsArchived ?? false; }
+    private void BeginEdit() { CopyToEdit(); editing = true; error = success = null; }
+    private void CancelEdit() { CopyToEdit(); editing = false; error = null; }
+    private void CategoryChanged(ChangeEventArgs e) => editCategoryId = Guid.TryParse(e.Value?.ToString(), out var id) ? id : null;
+    private async Task SaveAsync() { try { saving = true; var id = await CatalogService.SaveAsync(Id, editName, editDescription, editCategoryId, editQuantity); if (IsNew) { Navigation.NavigateTo($"/catalog/item/{id}"); return; } await CatalogService.SetFavoriteAsync(id, editFavorite); await CatalogService.SetArchivedAsync(id, editArchived); await ReloadAsync(); editing = false; success = "Item changes saved."; } catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { error = ex.Message; } finally { saving = false; } }
+    private async Task ReloadAsync() { if (Id is Guid id) details = await CatalogService.GetDetailsAsync(id); }
+    private async Task SetStoreAsync(Guid storeId, bool available) => await RunDetailActionAsync(() => CatalogService.SetStoreAvailabilityAsync(Id!.Value, storeId, available));
+    private async Task AddAliasAsync() { await RunDetailActionAsync(() => CatalogService.AddAliasAsync(Id!.Value, aliasInput)); aliasInput = string.Empty; }
+    private async Task RemoveAliasAsync(Guid aliasId) => await RunDetailActionAsync(() => CatalogService.RemoveAliasAsync(aliasId));
+    private async Task AddVariantAsync() { await RunDetailActionAsync(async () => { await CatalogService.SaveVariantAsync(Id!.Value, variantName, variantBrand, variantSize, variantPreferred, variantBarcode); }); variantName = variantBrand = variantSize = variantBarcode = string.Empty; variantPreferred = false; }
+    private async Task RemoveBarcodeAsync(Guid barcodeId) => await RunDetailActionAsync(() => CatalogService.RemoveBarcodeAsync(barcodeId));
+    private async Task UploadItemImageAsync(InputFileChangeEventArgs args) => await RunDetailActionAsync(() => ImageService.SaveCatalogItemImageAsync(Id!.Value, args.File));
+    private async Task UploadVariantImageAsync(Guid variantId, InputFileChangeEventArgs args) => await RunDetailActionAsync(() => ImageService.SaveVariantImageAsync(variantId, args.File));
+    private async Task RunDetailActionAsync(Func<Task> action) { try { await action(); error = null; await ReloadAsync(); } catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IOException or DbUpdateException) { error = ex.Message; } }
+    private static string Glyph(string? category) => category?.ToLowerInvariant() switch { "produce" => "✿", "dairy" => "◒", "meat" => "⌁", "frozen" => "❄", "bakery" => "◌", "drinks" => "◍", "pets" => "♧", "household" => "⌂", _ => "✳" };
+}

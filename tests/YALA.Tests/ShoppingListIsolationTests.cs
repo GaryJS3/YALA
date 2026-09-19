@@ -170,6 +170,46 @@ public sealed class ShoppingListIsolationTests
         Assert.Empty(await verify.StoreOffers.ToListAsync());
     }
 
+    [Fact]
+    public async Task ItemPageStoreChecksToggleGenericAvailabilityWithoutLosingOfferData()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+        var (_, item) = await fixture.SeedSingleHouseholdAsync();
+        var householdService = fixture.CreateHouseholdService("gary");
+        var catalogService = fixture.CreateCatalogService(householdService);
+        var storeService = fixture.CreateStoreService(householdService);
+        await storeService.SaveStoreAsync(null, "Aldi");
+        var store = Assert.Single(await storeService.GetStoresAsync());
+
+        await catalogService.SetStoreAvailabilityAsync(item.Id, store.Id, true);
+        Assert.True(Assert.Single((await catalogService.GetDetailsAsync(item.Id))!.Stores).IsAvailable);
+
+        await catalogService.SetStoreAvailabilityAsync(item.Id, store.Id, false);
+        Assert.False(Assert.Single((await catalogService.GetDetailsAsync(item.Id))!.Stores).IsAvailable);
+        await using var db = fixture.CreateDbContext();
+        Assert.False(Assert.Single(await db.StoreOffers.ToListAsync()).IsAvailable);
+    }
+
+    [Fact]
+    public async Task ItemPageCannotToggleAnotherHouseholdsStore()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+        var (firstHouse, secondHouse, firstItem, _) = await fixture.SeedTwoHouseholdsAsync();
+        Guid otherStoreId;
+        await using (var db = fixture.CreateDbContext())
+        {
+            var store = new Store { HouseholdId = secondHouse.Id, Name = "Other market" };
+            db.Stores.Add(store);
+            await db.SaveChangesAsync();
+            otherStoreId = store.Id;
+        }
+
+        var service = fixture.CreateCatalogService(fixture.CreateHouseholdService("gary"));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.SetStoreAvailabilityAsync(firstItem.Id, otherStoreId, true));
+        await using var verify = fixture.CreateDbContext();
+        Assert.Empty(await verify.StoreOffers.Where(x => x.HouseholdId == firstHouse.Id).ToListAsync());
+    }
+
     private sealed class TestFixture(SqliteConnection connection, DbContextOptions<ApplicationDbContext> options) : IAsyncDisposable
     {
         public static async Task<TestFixture> CreateAsync()
