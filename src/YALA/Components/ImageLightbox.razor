@@ -1,6 +1,6 @@
 @if (!string.IsNullOrWhiteSpace(Src))
 {
-    <button type="button" class="image-lightbox-trigger @TriggerClass" aria-label="View full-size image of @Alt" @onclick="Open">
+    <button type="button" class="image-lightbox-trigger @TriggerClass" aria-label="View full-size image of @Alt" @onclick="Open" @onclick:stopPropagation="true">
         <img src="@Src" alt="@Alt" loading="@Loading" />
     </button>
 }

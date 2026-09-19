@@ -266,6 +266,9 @@ public sealed class ShoppingListIsolationTests
         var listService = fixture.CreateShoppingListService(householdService);
 
         Assert.Equal("households/example/variants/preferred.jpg", (await catalogService.GetDetailsAsync(item.Id))!.ImagePath);
+        var catalogEntry = Assert.Single(await catalogService.GetItemsAsync());
+        Assert.Equal("households/example/variants/preferred.jpg", catalogEntry.ImagePath);
+        Assert.Equal(["Preferred milk", "Other milk"], catalogEntry.ExactProducts.Select(x => x.Name).ToArray());
         await listService.AddAsync(item.Id);
         Assert.Equal("households/example/variants/preferred.jpg", Assert.Single(await listService.GetRowsAsync()).ImagePath);
 

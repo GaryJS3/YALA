@@ -28,9 +28,7 @@ button { color: inherit; }
 .site-shell { min-height: 100vh; background-image: radial-gradient(#5263510b .8px, transparent .8px); background-size: 12px 12px; }
 .site-header { height: 78px; padding: 0 max(28px, calc((100vw - 1240px) / 2)); display: flex; align-items: center; gap: 38px; position: sticky; top: 0; z-index: 20; background: #f7f5eef2; border-bottom: 1px solid #e7e4da; backdrop-filter: blur(16px); }
 .brand { display: inline-flex; gap: 11px; align-items: center; color: var(--ink); text-decoration: none; font-weight: 700; letter-spacing: .16em; font-size: 16px; }
-.brand-mark { width: 30px; height: 30px; display: flex; align-items: end; justify-content: center; gap: 2px; padding: 5px 6px; background: var(--green); border-radius: 9px 9px 10px 10px; transform: rotate(-3deg); }
-.brand-mark span { width: 4px; border-radius: 4px 4px 1px 1px; background: #edf1e8; display: block; }
-.brand-mark span:nth-child(1) { height: 10px; }.brand-mark span:nth-child(2) { height: 15px; }.brand-mark span:nth-child(3) { height: 12px; }
+.brand-mark { width: 36px; height: 36px; display: block; flex: 0 0 36px; object-fit: cover; border-radius: 10px; transform: rotate(-3deg); box-shadow: 0 4px 10px #244c341c; }
 .household-switcher { position: relative; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 1px 12px; min-width: 175px; padding: 8px 32px 8px 13px; border: 1px solid #e0ded3; background: #fbfaf6; border-radius: 10px; cursor: pointer; }
 .switcher-caption { grid-column: 1 / -1; color: #878d82; font-size: 8px; font-weight: 700; letter-spacing: .15em; }
 .household-switcher select { grid-column: 1 / -1; grid-row: 2; width: calc(100% + 18px); border: 0; background: transparent; color: var(--ink); appearance: none; font-weight: 600; font-size: 13px; outline: 0; cursor: pointer; }
@@ -167,9 +165,11 @@ h1, h2, h3, p { margin-top: 0; }
 .edit-panel .section-heading h2 { font-size: 18px; }
 .catalog-glyph, .store-offer-mark { width: 31px; height: 31px; flex: 0 0 31px; display: grid; place-items: center; border-radius: 9px; background: #f1f2e9; color: #879275; font-size: 15px; }
 .archived-row .data-row-main { opacity: .62; }
-.catalog-row { cursor: pointer; transition: padding .16s ease, background .16s ease; }
+.catalog-row { align-items: flex-start; cursor: pointer; transition: padding .16s ease, background .16s ease; }
 .catalog-row:hover { margin: 0 -9px; padding-right: 9px; padding-left: 9px; border-radius: 8px; background: #f6f7f1; }
-.catalog-favorite { color: #c48647; font-size: 13px; }.catalog-row-arrow { color: #9aa395; font-size: 17px; transition: transform .16s ease; }.catalog-row:hover .catalog-row-arrow { transform: translateX(3px); }
+.catalog-thumb { width: 42px; height: 42px; flex: 0 0 42px; border-radius: 10px; }
+.catalog-name-line { display: flex; align-items: center; gap: 6px; }
+.catalog-favorite { color: #c48647; font-size: 13px; }.catalog-row-arrow { margin-top: 7px; color: #9aa395; font-size: 17px; transition: transform .16s ease; }.catalog-row:hover .catalog-row-arrow { transform: translateX(3px); }
 .item-breadcrumb { margin: -12px 0 22px; display: flex; gap: 8px; color: #a0a097; font-size: 10px; }.item-breadcrumb a { color: #647660; text-decoration: none; font-weight: 700; }
 .item-hero { min-height: 170px; padding: 24px; display: grid; grid-template-columns: 126px minmax(0, 1fr) auto; align-items: center; gap: 25px; border: 1px solid #e3e1d7; border-radius: 16px; background: radial-gradient(circle at 93% 15%, #edf2e8 0, transparent 34%), #fffefa; box-shadow: 0 7px 30px #30382708; }
 .item-portrait { width: 126px; height: 126px; position: relative; display: grid; place-items: center; overflow: hidden; border: 1px solid #dfe4d9; border-radius: 28px 28px 28px 9px; background: #eef2e9; color: #84947e; font-size: 48px; }.item-portrait:has(.image-lightbox) { overflow: visible; }.item-portrait .item-portrait-image { width: 100%; height: 100%; border-radius: inherit; }
@@ -406,7 +406,7 @@ h1, h2, h3, p { margin-top: 0; }
 @media (max-width: 760px) {
     .site-header { height: 65px; padding: 0 16px; gap: 13px; }
     .brand { gap: 8px; font-size: 13px; }
-    .brand-mark { width: 27px; height: 27px; }
+    .brand-mark { width: 31px; height: 31px; flex-basis: 31px; border-radius: 9px; }
     .household-switcher { margin-left: auto; min-width: 135px; max-width: 53vw; padding: 6px 26px 6px 10px; border-radius: 8px; }
     .switcher-caption { font-size: 7px; }.household-switcher select { font-size: 11px; }
     .switcher-chevron { right: 9px; bottom: 3px; font-size: 16px; }

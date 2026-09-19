@@ -54,10 +54,38 @@
             @foreach (var item in FilteredItems())
             {
                 <article class="data-row catalog-row @(item.IsArchived ? "archived-row" : "")" @onclick="() => OpenItem(item.Id)">
-                    <div class="catalog-glyph" aria-hidden="true">@Glyph(item.CategoryName)</div>
-                    <div class="data-row-main"><strong>@item.Name</strong><small>@(item.Description ?? item.CategoryName ?? "No details yet") · @(item.StoreCount == 1 ? "1 store" : $"{item.StoreCount} stores")@(item.LastPurchased is DateTimeOffset date ? $" · bought {date.ToLocalTime():MMM d}" : "")</small></div>
+                    @if (!string.IsNullOrWhiteSpace(item.ImagePath))
+                    {
+                        <ImageLightbox Src="@($"/images/{item.ImagePath}")" Alt="@item.Name" TriggerClass="catalog-thumb" Loading="lazy" />
+                    }
+                    else
+                    {
+                        <div class="catalog-glyph" aria-hidden="true">@Glyph(item.CategoryName)</div>
+                    }
+                    <div class="data-row-main">
+                        <div class="catalog-name-line"><strong>@item.Name</strong>@if (item.IsFavorite) { <span class="catalog-favorite" aria-label="Favorite">★</span> }</div>
+                        <small>@(item.Description ?? item.CategoryName ?? "No details yet") · @(item.StoreCount == 1 ? "1 store" : $"{item.StoreCount} stores")@(item.LastPurchased is DateTimeOffset date ? $" · bought {date.ToLocalTime():MMM d}" : "")</small>
+                        @if (item.ExactProducts.Count > 0)
+                        {
+                            <div class="exact-product-list" aria-label="Exact products">
+                                @foreach (var product in item.ExactProducts)
+                                {
+                                    <span><strong>@product.Name</strong>@if (product.IsPreferred && item.ExactProducts.Count > 1) { <i class="preferred-store-mark">Preferred</i> }@if (!string.IsNullOrWhiteSpace(product.Brand) || !string.IsNullOrWhiteSpace(product.Size)) { <small>@string.Join(" · ", new[] { product.Brand, product.Size }.Where(x => !string.IsNullOrWhiteSpace(x)))</small> }@if (product.StoreNames.Count > 0) { <em>@string.Join(", ", product.StoreNames) }</em> }</span>
+                                }
+                            </div>
+                        }
+                        @if (item.StorePrices.Count > 0)
+                        {
+                            <div class="available-store-list" aria-label="Available stores">
+                                <span>Available at</span>
+                                @foreach (var store in item.StorePrices)
+                                {
+                                    <StoreMark Name="@store.StoreName" ImagePath="@store.ImagePath" />
+                                }
+                            </div>
+                        }
+                    </div>
                     @if (item.IsArchived) { <span class="badge">Archived</span> }
-                    @if (item.IsFavorite) { <span class="catalog-favorite" aria-label="Favorite">★</span> }
                     <span class="catalog-row-arrow" aria-hidden="true">→</span>
                 </article>
             }

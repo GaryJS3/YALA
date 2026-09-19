@@ -27,17 +27,6 @@ else if (household is null)
 else
 {
     var storeGroups = StoreGroups();
-    <section class="page-heading list-heading">
-        <div>
-            <h1>What do we need?</h1>
-        </div>
-        <div class="list-count-card">
-            <span class="count-number">@uncheckedCount</span>
-            <span class="count-label">still to get</span>
-            <span class="count-scribble" aria-hidden="true">↘</span>
-        </div>
-    </section>
-
     <section class="quick-add-panel" aria-label="Quick add an item">
         <div class="quick-add-title"><span class="plus-disc">+</span><span>Add to the list</span><span class="quick-hint">Type an item, or pick a regular</span></div>
         <div class="quick-entry">
@@ -72,7 +61,7 @@ else
 
     <section class="list-board">
         <div class="list-toolbar">
-            <div class="list-title-group"><h2>On the list</h2><span class="item-total">@rows.Count item@(rows.Count == 1 ? "" : "s")</span></div>
+            <div class="list-title-group"><h2>On the list</h2><span class="item-total">@ListCountLabel()</span></div>
             <div class="toolbar-actions">
                 @if (view == ListView.Stores && storeGroups.Count > 1)
                 {
@@ -155,6 +144,9 @@ else
     private bool loading = true;
     private ListView view = ListView.Items;
     private int uncheckedCount => rows.Count(x => !x.IsChecked);
+    private string ListCountLabel() => rows.Any(x => x.IsChecked)
+        ? $"{uncheckedCount}/{rows.Count} items remain"
+        : $"{rows.Count} item{(rows.Count == 1 ? "" : "s")}";
 
     protected override async Task OnInitializedAsync()
     {

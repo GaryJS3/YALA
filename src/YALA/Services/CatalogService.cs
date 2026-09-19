@@ -4,7 +4,8 @@ using YALA.Data.Entities;
 
 namespace YALA.Services;
 
-public sealed record CatalogEntry(Guid Id, string Name, string? Description, string? CategoryName, decimal DefaultQuantity, bool IsFavorite, bool IsArchived, int StoreCount, DateTimeOffset? LastPurchased);
+public sealed record CatalogEntry(Guid Id, string Name, string? Description, string? CategoryName, decimal DefaultQuantity, bool IsFavorite, bool IsArchived, int StoreCount, DateTimeOffset? LastPurchased,
+    string? ImagePath, IReadOnlyList<ExactProductSummary> ExactProducts, IReadOnlyList<StorePrice> StorePrices);
 public sealed record AdHocCatalogEntry(Guid ShoppingListItemId, string Name, decimal Quantity, string? StoreName);
 public sealed record ProductVariantEntry(Guid Id, string Name, string? Brand, string? Size, string? ImagePath, bool IsPreferred,
     IReadOnlyList<(Guid Id, string Barcode)> Barcodes, IReadOnlySet<Guid> StoreIds);
@@ -82,11 +83,48 @@ public sealed class CatalogService(IDbContextFactory<ApplicationDbContext> dbCon
                     || v.Barcodes.Any(b => b.Barcode == query.Trim()))));
         }
 
-        return await items.OrderBy(x => x.IsArchived).ThenBy(x => x.Category == null ? int.MaxValue : x.Category.SortOrder).ThenBy(x => x.Name)
+        var entries = await items.OrderBy(x => x.IsArchived).ThenBy(x => x.Category == null ? int.MaxValue : x.Category.SortOrder).ThenBy(x => x.Name)
             .Select(x => new CatalogEntry(x.Id, x.Name, x.Description, x.Category == null ? null : x.Category.Name, x.DefaultQuantity, x.IsFavorite, x.IsArchived,
                 x.StoreOffers.Where(o => o.IsAvailable).Select(o => o.StoreId).Distinct().Count(), db.PurchaseHistory.Where(p => p.HouseholdId == household.HouseholdId && p.CatalogItemId == x.Id)
-                    .OrderByDescending(p => p.PurchasedAt).Select(p => (DateTimeOffset?)p.PurchasedAt).FirstOrDefault()))
+                    .OrderByDescending(p => p.PurchasedAt).Select(p => (DateTimeOffset?)p.PurchasedAt).FirstOrDefault(), x.ImagePath, Array.Empty<ExactProductSummary>(), Array.Empty<StorePrice>()))
             .ToListAsync(cancellationToken);
+
+        if (entries.Count == 0) return entries;
+
+        var itemIds = entries.Select(x => x.Id).ToArray();
+        var variants = await db.ProductVariants.AsNoTracking()
+            .Where(x => x.HouseholdId == household.HouseholdId && !x.IsArchived && itemIds.Contains(x.CatalogItemId))
+            .OrderByDescending(x => x.IsPreferred).ThenBy(x => x.Name)
+            .Select(x => new
+            {
+                x.CatalogItemId,
+                x.Name,
+                x.Brand,
+                x.Size,
+                x.ImagePath,
+                x.IsPreferred,
+                StoreNames = db.StoreOffers.Where(o => o.HouseholdId == household.HouseholdId && o.ProductVariantId == x.Id && o.IsAvailable && o.Store.IsActive)
+                    .OrderBy(o => o.Store.SortOrder).ThenBy(o => o.Store.Name).Select(o => o.Store.Name).ToArray()
+            })
+            .ToListAsync(cancellationToken);
+        var offers = await db.StoreOffers.AsNoTracking()
+            .Where(x => x.HouseholdId == household.HouseholdId && x.IsAvailable && itemIds.Contains(x.CatalogItemId) && x.Store.IsActive)
+            .Include(x => x.Store).Include(x => x.Prices)
+            .ToListAsync(cancellationToken);
+
+        return entries.Select(item => item with
+        {
+            ImagePath = item.ImagePath ?? variants.Where(x => x.CatalogItemId == item.Id && !string.IsNullOrWhiteSpace(x.ImagePath))
+                .Select(x => x.ImagePath).FirstOrDefault(),
+            ExactProducts = variants.Where(x => x.CatalogItemId == item.Id)
+                .Select(x => new ExactProductSummary(x.Name, x.Brand, x.Size, x.IsPreferred, x.StoreNames)).ToArray(),
+            StorePrices = offers.Where(x => x.CatalogItemId == item.Id)
+                .GroupBy(x => new { x.StoreId, x.Store.Name, x.Store.ImagePath })
+                .Select(x => new StorePrice(x.Key.StoreId, x.Key.Name,
+                    x.SelectMany(o => o.Prices).OrderByDescending(p => p.RecordedAt).Select(p => (decimal?)p.Price).FirstOrDefault(),
+                    false, x.Any(o => o.IsPreferred), x.Key.ImagePath))
+                .OrderByDescending(x => x.IsPreferred).ThenBy(x => x.StoreName).ToArray()
+        }).ToArray();
     }
 
     public async Task<IReadOnlyList<Category>> GetCategoriesAsync(CancellationToken cancellationToken = default)
