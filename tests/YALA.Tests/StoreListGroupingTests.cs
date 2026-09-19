@@ -1,0 +1,60 @@
+using YALA.Services;
+
+namespace YALA.Tests;
+
+public sealed class StoreListGroupingTests
+{
+    [Fact]
+    public void AvailableAtMultipleStores_AppearsInEveryStoreGroup()
+    {
+        var bjsId = Guid.NewGuid();
+        var walmartId = Guid.NewGuid();
+        var row = new ShoppingListRow
+        {
+            Id = Guid.NewGuid(),
+            CatalogItemId = Guid.NewGuid(),
+            Name = "Cat Food",
+            StorePrices =
+            [
+                new StorePrice(bjsId, "BJ's", 20m, false, false),
+                new StorePrice(walmartId, "Walmart", 18m, false, true)
+            ]
+        };
+
+        var groups = ShoppingListService.GroupRowsByStore([row]);
+
+        Assert.Collection(groups,
+            group =>
+            {
+                Assert.Equal("BJ's", group.Name);
+                var entry = Assert.Single(group.Items);
+                Assert.Same(row, entry.Item);
+                Assert.Equal(bjsId, entry.StoreId);
+            },
+            group =>
+            {
+                Assert.Equal("Walmart", group.Name);
+                var entry = Assert.Single(group.Items);
+                Assert.Same(row, entry.Item);
+                Assert.Equal(walmartId, entry.StoreId);
+            });
+    }
+
+    [Fact]
+    public void AdHocItem_RemainsInItsAssignedStoreOnly()
+    {
+        var storeId = Guid.NewGuid();
+        var row = new ShoppingListRow
+        {
+            Id = Guid.NewGuid(),
+            Name = "Milk",
+            AssignedStoreId = storeId,
+            AssignedStoreName = "Walmart"
+        };
+
+        var group = Assert.Single(ShoppingListService.GroupRowsByStore([row]));
+
+        Assert.Equal("Walmart", group.Name);
+        Assert.Equal(storeId, Assert.Single(group.Items).StoreId);
+    }
+}

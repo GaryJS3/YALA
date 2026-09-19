@@ -136,6 +136,8 @@ h1, h2, h3, p { margin-top: 0; }
 .store-price-list { margin-top: 3px; display: flex; flex-wrap: wrap; gap: 4px 11px; }
 .store-price-list span { color: #92958a; font-size: 9px; }
 .store-price-list b { color: #61735e; font-weight: 600; }
+.other-store-list { margin-top: 3px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 7px; color: #92988f; font-size: 8px; }
+.other-store-list strong { display: inline-flex; align-items: center; gap: 4px; color: #63755e; font-weight: 600; }
 .available-store-list { margin-top: 2px; display: flex; align-items: center; flex-wrap: wrap; gap: 4px; color: #92988f; font-size: 8px; }.available-store-list > span { margin-right: 1px; }.available-store-list strong { padding: 2px 5px; border-radius: 6px; background: #edf3ea; color: #63755e; font-size: 8px; font-weight: 600; }
 .exact-product-list { margin-top: 3px; display: flex; flex-wrap: wrap; gap: 4px; }.exact-product-list > span { padding: 4px 6px; display: inline-flex; align-items: baseline; flex-wrap: wrap; gap: 3px 5px; border-radius: 6px; background: #f4f3ed; color: #666f64; font-size: 8px; }.exact-product-list strong { font-weight: 600; }.exact-product-list small { color: #8c9188; font-size: 8px; }.exact-product-list em { color: #71826b; font-size: 7px; font-style: normal; }
 .loading-surface { padding: 120px 20px; display: flex; justify-content: center; gap: 10px; color: #82877d; font-size: 12px; }

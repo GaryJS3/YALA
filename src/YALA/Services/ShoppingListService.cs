@@ -27,12 +27,46 @@ public sealed class ShoppingListRow
 public sealed record StorePrice(Guid StoreId, string StoreName, decimal? Price, bool IsAssigned, bool IsPreferred);
 public sealed record ExactProductSummary(string Name, string? Brand, string? Size, IReadOnlyList<string> StoreNames);
 public sealed record QuickAddChoice(Guid Id, string Name, bool IsFavorite, DateTimeOffset? LastPurchased, int PurchaseCount);
+public sealed record StoreListEntry(ShoppingListRow Item, Guid? StoreId);
+public sealed record StoreListGroup(string Name, IReadOnlyList<StoreListEntry> Items);
 
 public sealed class ShoppingListService(
     IDbContextFactory<ApplicationDbContext> dbContextFactory,
     HouseholdService householdService,
     ShoppingListChangeNotifier notifier)
 {
+    public static IReadOnlyList<StoreListGroup> GroupRowsByStore(IEnumerable<ShoppingListRow> rows)
+    {
+        var entries = rows.Where(x => !x.IsChecked).SelectMany(row =>
+        {
+            if (!row.IsAdHoc && row.StorePrices.Count > 0)
+            {
+                return row.StorePrices.Select(store => new
+                {
+                    store.StoreId,
+                    StoreName = store.StoreName,
+                    Entry = new StoreListEntry(row, (Guid?)store.StoreId)
+                });
+            }
+
+            return
+            [
+                new
+                {
+                    StoreId = row.AssignedStoreId ?? Guid.Empty,
+                    StoreName = row.AssignedStoreName ?? "Any store",
+                    Entry = new StoreListEntry(row, row.AssignedStoreId)
+                }
+            ];
+        });
+
+        return entries
+            .GroupBy(x => new { x.StoreId, x.StoreName })
+            .OrderBy(x => x.Key.StoreName == "Any store" ? "~~~" : x.Key.StoreName, StringComparer.OrdinalIgnoreCase)
+            .Select(x => new StoreListGroup(x.Key.StoreName, x.Select(entry => entry.Entry).ToArray()))
+            .ToArray();
+    }
+
     public async Task<IReadOnlyList<ShoppingListRow>> GetRowsAsync(CancellationToken cancellationToken = default)
     {
         var household = await RequireHouseholdAsync(cancellationToken);
