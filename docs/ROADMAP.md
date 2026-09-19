@@ -43,6 +43,7 @@ Pantry inventory, expiration tracking, meal planning, recipes, nutrition trackin
 
 ## Progress notes
 
+- 2026-09-19: Fixed image persistence so local uploads use the same resolved data directory as the database and image endpoint. Exact products created from barcode lookup now save a validated local copy of the lookup photo instead of discarding the preview URL.
 - 2026-09-19: Moved store editing and store-specific item management to dedicated detail pages. Removing an item from a store now marks the offer unavailable instead of deleting its price history.
 - 2026-09-19: Added administrator-only user management. The first account is the administrator; administrators can create local accounts, set replacement passwords, and delete accounts with safeguards for their own account, the last administrator, and sole household members.
 - 2026-09-18: Added camera barcode scanning and manual UPC/EAN/GTIN entry to exact products. Product details are filled from a merged Open Food Facts, Open Pet Food Facts, Open Beauty Facts, Open Products Facts, and UPCitemdb lookup, while remaining editable before saving.

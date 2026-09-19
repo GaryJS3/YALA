@@ -200,6 +200,7 @@ h1, h2, h3, p { margin-top: 0; }
 .variant-title { display: flex; gap: 8px; align-items: center; }
 .variant-thumb { width: 42px; height: 42px; margin-top: 7px; object-fit: cover; border-radius: 7px; }
 .variant-image-upload { margin: 7px 0; display: block; color: #899183; font-size: 8px; }
+.variant-photo-lookup { margin-top: 4px; padding: 0; border: 0; background: none; color: #657c61; font: inherit; font-size: 8px; font-weight: 700; text-decoration: underline; cursor: pointer; }
 .variant-title strong { color: #4d5949; font-size: 10px; }.variant-card > small { display: block; margin: 4px 0 6px; color: #96998f; font-size: 9px; }
 .barcode-list { margin-top: 6px; }.barcode-chip { background: #f4f0e8; color: #82735c; font-family: 'Consolas', monospace; }
 .variant-entry { margin-top: 11px; padding-top: 10px; border-top: 1px dashed #e4e2d8; }

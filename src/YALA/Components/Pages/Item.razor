@@ -114,7 +114,14 @@ else
                         <div class="variant-title"><strong>@variant.Name</strong>@if (variant.IsPreferred) { <span class="badge">Preferred</span> }</div>
                         @if (!string.IsNullOrWhiteSpace(variant.Brand) || !string.IsNullOrWhiteSpace(variant.Size)) { <small>@variant.Brand @variant.Size</small> }
                         <div class="barcode-list">@foreach (var barcode in variant.Barcodes) { <span class="barcode-chip">@barcode.Barcode@if (editing) { <button type="button" aria-label="Remove barcode" @onclick="() => RemoveBarcodeAsync(barcode.Id)">×</button> }</span> }</div>
-                        @if (editing) { <label class="variant-image-upload">Product photo <InputFile accept="image/jpeg,image/png,image/webp" OnChange="args => UploadVariantImageAsync(variant.Id, args)" /></label> }
+                        @if (editing)
+                        {
+                            <label class="variant-image-upload">Product photo <InputFile accept="image/jpeg,image/png,image/webp" OnChange="args => UploadVariantImageAsync(variant.Id, args)" /></label>
+                            @if (string.IsNullOrWhiteSpace(variant.ImagePath) && variant.Barcodes.Count > 0)
+                            {
+                                <button type="button" class="variant-photo-lookup" @onclick="() => FindVariantPhotoAsync(variant.Id, variant.Barcodes[0].Barcode)">Find barcode photo</button>
+                            }
+                        }
                     </article>
                 }
             </div>
@@ -177,10 +184,58 @@ else
     private async Task SetStoreAsync(Guid storeId, bool available) => await RunDetailActionAsync(() => CatalogService.SetStoreAvailabilityAsync(Id!.Value, storeId, available));
     private async Task AddAliasAsync() { await RunDetailActionAsync(() => CatalogService.AddAliasAsync(Id!.Value, aliasInput)); aliasInput = string.Empty; }
     private async Task RemoveAliasAsync(Guid aliasId) => await RunDetailActionAsync(() => CatalogService.RemoveAliasAsync(aliasId));
-    private async Task AddVariantAsync() { await RunDetailActionAsync(async () => { await CatalogService.SaveVariantAsync(Id!.Value, variantName, variantBrand, variantSize, variantPreferred, variantBarcode); }); variantName = variantBrand = variantSize = variantBarcode = string.Empty; variantPreferred = false; }
+    private async Task AddVariantAsync()
+    {
+        try
+        {
+            success = null;
+            var barcode = new string(variantBarcode.Where(char.IsLetterOrDigit).ToArray());
+            var variantId = await CatalogService.SaveVariantAsync(Id!.Value, variantName, variantBrand, variantSize, variantPreferred, variantBarcode);
+            var lookupImageUrl = lookupResult?.Barcode == barcode ? lookupResult.ImageUrl : null;
+            if (!string.IsNullOrWhiteSpace(lookupImageUrl))
+            {
+                try { await ImageService.SaveVariantImageFromUrlAsync(variantId, lookupImageUrl); }
+                catch (Exception ex) when (ex is ArgumentException or HttpRequestException or IOException or TaskCanceledException)
+                {
+                    success = "Product added, but its lookup photo could not be saved. You can upload a photo from the product card.";
+                }
+            }
+            error = null;
+            await ReloadAsync();
+            variantName = variantBrand = variantSize = variantBarcode = string.Empty;
+            variantPreferred = false;
+            lookupResult = null;
+            lookupMessage = null;
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or DbUpdateException)
+        {
+            error = ex.Message;
+        }
+    }
     private async Task RemoveBarcodeAsync(Guid barcodeId) => await RunDetailActionAsync(() => CatalogService.RemoveBarcodeAsync(barcodeId));
     private async Task UploadItemImageAsync(InputFileChangeEventArgs args) => await RunDetailActionAsync(() => ImageService.SaveCatalogItemImageAsync(Id!.Value, args.File));
     private async Task UploadVariantImageAsync(Guid variantId, InputFileChangeEventArgs args) => await RunDetailActionAsync(() => ImageService.SaveVariantImageAsync(variantId, args.File));
+    private async Task FindVariantPhotoAsync(Guid variantId, string barcode)
+    {
+        try
+        {
+            success = null;
+            var result = await ProductLookupService.LookupAsync(barcode);
+            if (string.IsNullOrWhiteSpace(result?.ImageUrl))
+            {
+                error = "No product photo was found for that barcode.";
+                return;
+            }
+            await ImageService.SaveVariantImageFromUrlAsync(variantId, result.ImageUrl);
+            await ReloadAsync();
+            error = null;
+            success = "The barcode photo was saved to this exact product.";
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or HttpRequestException or IOException or TaskCanceledException or DbUpdateException)
+        {
+            error = ex.Message;
+        }
+    }
     private async Task RunDetailActionAsync(Func<Task> action) { try { await action(); error = null; await ReloadAsync(); } catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IOException or DbUpdateException) { error = ex.Message; } }
     private async Task BarcodeKeyDownAsync(KeyboardEventArgs args) { if (args.Key == "Enter") await LookupBarcodeAsync(); }
     private async Task LookupBarcodeAsync()

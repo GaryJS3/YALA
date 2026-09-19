@@ -36,6 +36,9 @@ if (string.IsNullOrWhiteSpace(dataDirectory))
 }
 dataDirectory = Path.GetFullPath(dataDirectory);
 Directory.CreateDirectory(dataDirectory);
+// Keep services that write files on the same resolved data root as the database
+// and the image-serving endpoint, including during local development.
+builder.Configuration["YALA_DATA_DIR"] = dataDirectory;
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
     ?? $"Data Source={Path.Combine(dataDirectory, "yala.db")};Cache=Shared";
@@ -68,6 +71,11 @@ builder.Services.AddHttpClient("UPCitemdb", client =>
 {
     client.BaseAddress = new Uri("https://api.upcitemdb.com/");
     client.Timeout = TimeSpan.FromSeconds(8);
+});
+builder.Services.AddHttpClient("ProductImages", client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(15);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("YALA/1.0 (https://github.com/GaryJS3/YALA)");
 });
 
 builder.Services.AddIdentityCore<ApplicationUser>(options =>

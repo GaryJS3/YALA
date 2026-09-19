@@ -8,6 +8,7 @@ public sealed class ImageService(
     IDbContextFactory<ApplicationDbContext> dbContextFactory,
     HouseholdService householdService,
     ShoppingListChangeNotifier notifier,
+    IHttpClientFactory httpClientFactory,
     IConfiguration configuration,
     IWebHostEnvironment environment)
 {
@@ -42,6 +43,35 @@ public sealed class ImageService(
         notifier.Notify(household.HouseholdId);
     }
 
+    public async Task SaveVariantImageFromUrlAsync(Guid variantId, string imageUrl, CancellationToken cancellationToken = default)
+    {
+        if (!Uri.TryCreate(imageUrl, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
+        {
+            throw new ArgumentException("The product image address is invalid.");
+        }
+
+        var household = await RequireHouseholdAsync(cancellationToken);
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var variant = await db.ProductVariants.SingleOrDefaultAsync(x => x.Id == variantId && x.HouseholdId == household.HouseholdId, cancellationToken)
+            ?? throw new InvalidOperationException("That product is not in this household.");
+        using var response = await httpClientFactory.CreateClient("ProductImages")
+            .GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        if (response.Content.Headers.ContentLength > MaximumImageBytes)
+        {
+            throw new ArgumentException("The product image is larger than 4 MB.");
+        }
+
+        await using var source = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var content = await ReadImageAsync(source, cancellationToken);
+        var oldPath = variant.ImagePath;
+        variant.ImagePath = await SaveContentAsync(household.HouseholdId, "variants", content, cancellationToken);
+        try { await db.SaveChangesAsync(cancellationToken); }
+        catch { DeleteStoredImage(variant.ImagePath, household.HouseholdId, "variants"); throw; }
+        DeleteStoredImage(oldPath, household.HouseholdId, "variants");
+        notifier.Notify(household.HouseholdId);
+    }
+
     private async Task<string> SaveAsync(Guid householdId, string kind, IBrowserFile file, CancellationToken cancellationToken)
     {
         if (file.Size is <= 0 or > MaximumImageBytes)
@@ -49,12 +79,15 @@ public sealed class ImageService(
             throw new ArgumentException("Images must be 4 MB or smaller.");
         }
 
-        var content = new MemoryStream((int)file.Size);
         await using (var stream = file.OpenReadStream(MaximumImageBytes, cancellationToken))
         {
-            await stream.CopyToAsync(content, cancellationToken);
+            using var content = await ReadImageAsync(stream, cancellationToken);
+            return await SaveContentAsync(householdId, kind, content, cancellationToken);
         }
+    }
 
+    private async Task<string> SaveContentAsync(Guid householdId, string kind, MemoryStream content, CancellationToken cancellationToken)
+    {
         var extension = DetectExtension(content.GetBuffer().AsSpan(0, (int)content.Length));
         if (extension is null)
         {
@@ -73,6 +106,24 @@ public sealed class ImageService(
 
         var relativePath = $"households/{householdId:D}/{kind}/{fileName}";
         return relativePath;
+    }
+
+    private static async Task<MemoryStream> ReadImageAsync(Stream source, CancellationToken cancellationToken)
+    {
+        var content = new MemoryStream();
+        var buffer = new byte[81920];
+        while (true)
+        {
+            var read = await source.ReadAsync(buffer, cancellationToken);
+            if (read == 0) break;
+            if (content.Length + read > MaximumImageBytes)
+            {
+                content.Dispose();
+                throw new ArgumentException("Images must be 4 MB or smaller.");
+            }
+            await content.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+        }
+        return content;
     }
 
     private void DeleteStoredImage(string? relativePath, Guid householdId, string kind)
