@@ -43,6 +43,7 @@ Pantry inventory, expiration tracking, meal planning, recipes, nutrition trackin
 
 ## Progress notes
 
+- 2026-09-19: Saved catalog items in both shopping-list views now open their catalog detail page when the item content is clicked, while ad-hoc entries and list controls remain unchanged.
 - 2026-09-19: Stores can now have household-scoped uploaded logos or pictures. Store images are validated and persisted alongside existing item images, and appear on store cards, store detail pages, shopping-list availability indicators, and item availability controls.
 - 2026-09-19: Consolidated application build information into the navigation rail, added the Eastern build date and time, and simplified the shopping-list heading copy.
 - 2026-09-19: Replaced the blocking Blazor reconnect dialog with a compact, accessible status banner at the top of the viewport and set automatic reconnect attempts to a consistent three-second interval.
