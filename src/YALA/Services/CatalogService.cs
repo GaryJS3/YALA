@@ -5,7 +5,9 @@ using YALA.Data.Entities;
 namespace YALA.Services;
 
 public sealed record CatalogEntry(Guid Id, string Name, string? Description, string? CategoryName, decimal DefaultQuantity, bool IsFavorite, bool IsArchived, int StoreCount, DateTimeOffset? LastPurchased);
-public sealed record ProductVariantEntry(Guid Id, string Name, string? Brand, string? Size, string? ImagePath, bool IsPreferred, IReadOnlyList<(Guid Id, string Barcode)> Barcodes);
+public sealed record AdHocCatalogEntry(Guid ShoppingListItemId, string Name, decimal Quantity, string? StoreName);
+public sealed record ProductVariantEntry(Guid Id, string Name, string? Brand, string? Size, string? ImagePath, bool IsPreferred,
+    IReadOnlyList<(Guid Id, string Barcode)> Barcodes, IReadOnlySet<Guid> StoreIds);
 public sealed record CatalogAliasEntry(Guid Id, string Alias);
 public sealed record ItemStoreAvailability(Guid Id, string Name, bool IsActive, bool IsAvailable);
 public sealed record CatalogDetails(Guid Id, string Name, string? Description, Guid? CategoryId, string? CategoryName,
@@ -15,6 +17,53 @@ public sealed record CatalogDetails(Guid Id, string Name, string? Description, G
 
 public sealed class CatalogService(IDbContextFactory<ApplicationDbContext> dbContextFactory, HouseholdService householdService, ShoppingListChangeNotifier notifier)
 {
+    public async Task<IReadOnlyList<AdHocCatalogEntry>> GetAdHocItemsAsync(CancellationToken cancellationToken = default)
+    {
+        var household = await RequireHouseholdAsync(cancellationToken);
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        return await db.ShoppingListItems.AsNoTracking()
+            .Where(x => x.HouseholdId == household.HouseholdId && x.CatalogItemId == null && x.CustomName != null)
+            .OrderBy(x => x.CustomName)
+            .Select(x => new AdHocCatalogEntry(x.Id, x.CustomName!, x.Quantity, x.AssignedStore == null ? null : x.AssignedStore.Name))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<Guid> PromoteAdHocItemAsync(Guid shoppingListItemId, CancellationToken cancellationToken = default)
+    {
+        var household = await RequireHouseholdAsync(cancellationToken);
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.ShoppingListItems.SingleOrDefaultAsync(x => x.Id == shoppingListItemId
+            && x.HouseholdId == household.HouseholdId && x.CatalogItemId == null, cancellationToken)
+            ?? throw new InvalidOperationException("That ad-hoc item is not on this household's list.");
+        var name = row.CustomName?.Trim();
+        if (string.IsNullOrWhiteSpace(name)) throw new InvalidOperationException("That ad-hoc item does not have a valid name.");
+
+        var item = new CatalogItem
+        {
+            HouseholdId = household.HouseholdId,
+            Name = name,
+            DefaultQuantity = 1
+        };
+        db.CatalogItems.Add(item);
+        row.CatalogItemId = item.Id;
+        row.CustomName = null;
+        await db.SaveChangesAsync(cancellationToken);
+        notifier.Notify(household.HouseholdId);
+        return item.Id;
+    }
+
+    public async Task DeleteAdHocItemAsync(Guid shoppingListItemId, CancellationToken cancellationToken = default)
+    {
+        var household = await RequireHouseholdAsync(cancellationToken);
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var row = await db.ShoppingListItems.SingleOrDefaultAsync(x => x.Id == shoppingListItemId
+            && x.HouseholdId == household.HouseholdId && x.CatalogItemId == null, cancellationToken)
+            ?? throw new InvalidOperationException("That ad-hoc item is not on this household's list.");
+        db.ShoppingListItems.Remove(row);
+        await db.SaveChangesAsync(cancellationToken);
+        notifier.Notify(household.HouseholdId);
+    }
+
     public async Task<IReadOnlyList<CatalogEntry>> GetItemsAsync(string? query = null, bool includeArchived = false, CancellationToken cancellationToken = default)
     {
         var household = await householdService.GetCurrentAsync(cancellationToken)
@@ -35,7 +84,7 @@ public sealed class CatalogService(IDbContextFactory<ApplicationDbContext> dbCon
 
         return await items.OrderBy(x => x.IsArchived).ThenBy(x => x.Category == null ? int.MaxValue : x.Category.SortOrder).ThenBy(x => x.Name)
             .Select(x => new CatalogEntry(x.Id, x.Name, x.Description, x.Category == null ? null : x.Category.Name, x.DefaultQuantity, x.IsFavorite, x.IsArchived,
-                x.StoreOffers.Count(o => o.IsAvailable), db.PurchaseHistory.Where(p => p.HouseholdId == household.HouseholdId && p.CatalogItemId == x.Id)
+                x.StoreOffers.Where(o => o.IsAvailable).Select(o => o.StoreId).Distinct().Count(), db.PurchaseHistory.Where(p => p.HouseholdId == household.HouseholdId && p.CatalogItemId == x.Id)
                     .OrderByDescending(p => p.PurchasedAt).Select(p => (DateTimeOffset?)p.PurchasedAt).FirstOrDefault()))
             .ToListAsync(cancellationToken);
     }
@@ -64,12 +113,18 @@ public sealed class CatalogService(IDbContextFactory<ApplicationDbContext> dbCon
             .Select(x => new ItemStoreAvailability(x.Id, x.Name, x.IsActive,
                 db.StoreOffers.Any(o => o.HouseholdId == household.HouseholdId && o.CatalogItemId == item.Id && o.StoreId == x.Id && o.IsAvailable)))
             .ToListAsync(cancellationToken);
+        var variantStoreIds = await db.StoreOffers.AsNoTracking()
+            .Where(x => x.HouseholdId == household.HouseholdId && x.CatalogItemId == item.Id
+                && x.ProductVariantId != null && x.IsAvailable)
+            .Select(x => new { VariantId = x.ProductVariantId!.Value, x.StoreId })
+            .ToListAsync(cancellationToken);
         return new CatalogDetails(item.Id, item.Name, item.Description, item.CategoryId, categoryName, item.DefaultQuantity,
             item.IsFavorite, item.IsArchived, item.ImagePath,
             item.Aliases.OrderBy(x => x.Alias).Select(x => new CatalogAliasEntry(x.Id, x.Alias)).ToArray(),
             item.Variants.Where(x => !x.IsArchived).OrderByDescending(x => x.IsPreferred).ThenBy(x => x.Name)
                 .Select(x => new ProductVariantEntry(x.Id, x.Name, x.Brand, x.Size, x.ImagePath, x.IsPreferred,
-                    x.Barcodes.OrderBy(b => b.Barcode).Select(b => (b.Id, b.Barcode)).ToArray())).ToArray(), stores);
+                    x.Barcodes.OrderBy(b => b.Barcode).Select(b => (b.Id, b.Barcode)).ToArray(),
+                    variantStoreIds.Where(o => o.VariantId == x.Id).Select(o => o.StoreId).ToHashSet())).ToArray(), stores);
     }
 
     public async Task AddAliasAsync(Guid itemId, string alias, CancellationToken cancellationToken = default)
@@ -95,7 +150,8 @@ public sealed class CatalogService(IDbContextFactory<ApplicationDbContext> dbCon
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<Guid> SaveVariantAsync(Guid itemId, string name, string? brand, string? size, bool preferred, string? barcode = null, CancellationToken cancellationToken = default)
+    public async Task<Guid> SaveVariantAsync(Guid itemId, string name, string? brand, string? size, bool preferred, string? barcode = null,
+        IReadOnlyCollection<Guid>? storeIds = null, CancellationToken cancellationToken = default)
     {
         var household = await RequireHouseholdAsync(cancellationToken);
         var cleanName = name.Trim();
@@ -105,6 +161,12 @@ public sealed class CatalogService(IDbContextFactory<ApplicationDbContext> dbCon
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         if (!await db.CatalogItems.AnyAsync(x => x.Id == itemId && x.HouseholdId == household.HouseholdId, cancellationToken))
             throw new InvalidOperationException("That item is not in this household.");
+        var selectedStoreIds = storeIds?.Distinct().ToArray() ?? [];
+        if (selectedStoreIds.Length > 0)
+        {
+            var validStoreCount = await db.Stores.CountAsync(x => x.HouseholdId == household.HouseholdId && selectedStoreIds.Contains(x.Id), cancellationToken);
+            if (validStoreCount != selectedStoreIds.Length) throw new InvalidOperationException("One or more selected stores are not in this household.");
+        }
         if (preferred)
         {
             var otherVariants = await db.ProductVariants.Where(x => x.HouseholdId == household.HouseholdId && x.CatalogItemId == itemId).ToListAsync(cancellationToken);
@@ -128,8 +190,48 @@ public sealed class CatalogService(IDbContextFactory<ApplicationDbContext> dbCon
         {
             db.ProductBarcodes.Add(new ProductBarcode { HouseholdId = household.HouseholdId, ProductVariantId = product.Id, Barcode = cleanBarcode });
         }
+        foreach (var storeId in selectedStoreIds)
+        {
+            db.StoreOffers.Add(new StoreOffer
+            {
+                HouseholdId = household.HouseholdId,
+                CatalogItemId = itemId,
+                StoreId = storeId,
+                ProductVariantId = product.Id
+            });
+        }
         await db.SaveChangesAsync(cancellationToken);
         return product.Id;
+    }
+
+    public async Task SetVariantStoreAvailabilityAsync(Guid variantId, Guid storeId, bool isAvailable, CancellationToken cancellationToken = default)
+    {
+        var household = await RequireHouseholdAsync(cancellationToken);
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var variant = await db.ProductVariants.AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == variantId && x.HouseholdId == household.HouseholdId, cancellationToken)
+            ?? throw new InvalidOperationException("That product is not in this household.");
+        if (!await db.Stores.AnyAsync(x => x.Id == storeId && x.HouseholdId == household.HouseholdId, cancellationToken))
+            throw new InvalidOperationException("That store is not in this household.");
+
+        var offer = await db.StoreOffers.SingleOrDefaultAsync(x => x.HouseholdId == household.HouseholdId
+            && x.CatalogItemId == variant.CatalogItemId && x.StoreId == storeId && x.ProductVariantId == variantId, cancellationToken);
+        if (offer is null)
+        {
+            if (!isAvailable) return;
+            offer = new StoreOffer
+            {
+                HouseholdId = household.HouseholdId,
+                CatalogItemId = variant.CatalogItemId,
+                StoreId = storeId,
+                ProductVariantId = variantId
+            };
+            db.StoreOffers.Add(offer);
+        }
+        offer.IsAvailable = isAvailable;
+        offer.UpdatedAt = DateTimeOffset.UtcNow;
+        await db.SaveChangesAsync(cancellationToken);
+        notifier.Notify(household.HouseholdId);
     }
 
     public async Task AddBarcodeAsync(Guid variantId, string barcode, CancellationToken cancellationToken = default)

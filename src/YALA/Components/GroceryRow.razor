@@ -17,6 +17,15 @@
         {
             <span class="grocery-description">@Item.Description</span>
         }
+        @if (Item.ExactProducts.Count > 1)
+        {
+            <div class="exact-product-list" aria-label="Exact products">
+                @foreach (var product in Item.ExactProducts)
+                {
+                    <span><strong>@product.Name</strong>@if (!string.IsNullOrWhiteSpace(product.Brand) || !string.IsNullOrWhiteSpace(product.Size)) { <small>@string.Join(" · ", new[] { product.Brand, product.Size }.Where(x => !string.IsNullOrWhiteSpace(x)))</small> }@if (product.StoreNames.Count > 0) { <em>@string.Join(", ", product.StoreNames)</em> }</span>
+                }
+            </div>
+        }
         @if (ShowPrices && Item.StorePrices.Count > 0)
         {
             <div class="store-price-list">
@@ -28,7 +37,7 @@
         }
     </div>
     <div class="row-end-controls">
-        @if (Stores.Count > 0)
+        @if (ShowStoreAssignment && Stores.Count > 0)
         {
             <select class="assignment-select" aria-label="Store for @Item.Name" value="@(Item.AssignedStoreId?.ToString() ?? "")" @onchange="AssignChangedAsync">
                 <option value="">Store…</option>
@@ -51,6 +60,7 @@
     [Parameter, EditorRequired] public ShoppingListRow Item { get; set; } = default!;
     [Parameter] public IReadOnlyList<Store> Stores { get; set; } = [];
     [Parameter] public bool ShowPrices { get; set; }
+    [Parameter] public bool ShowStoreAssignment { get; set; } = true;
     [Parameter] public EventCallback<Guid> OnToggle { get; set; }
     [Parameter] public EventCallback<(Guid Id, decimal Delta)> OnQuantity { get; set; }
     [Parameter] public EventCallback<Guid> OnRemove { get; set; }

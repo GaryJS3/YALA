@@ -9,7 +9,7 @@ public sealed record PriceSummary(decimal? Last, decimal? Average);
 public sealed class ShoppingListRow
 {
     public Guid Id { get; init; }
-    public Guid CatalogItemId { get; init; }
+    public Guid? CatalogItemId { get; init; }
     public string Name { get; init; } = string.Empty;
     public string? Description { get; init; }
     public string? ImagePath { get; init; }
@@ -20,9 +20,12 @@ public sealed class ShoppingListRow
     public string? AssignedStoreName { get; init; }
     public string? CategoryName { get; init; }
     public IReadOnlyList<StorePrice> StorePrices { get; init; } = [];
+    public IReadOnlyList<ExactProductSummary> ExactProducts { get; init; } = [];
+    public bool IsAdHoc => CatalogItemId is null;
 }
 
 public sealed record StorePrice(Guid StoreId, string StoreName, decimal? Price, bool IsAssigned, bool IsPreferred);
+public sealed record ExactProductSummary(string Name, string? Brand, string? Size, IReadOnlyList<string> StoreNames);
 public sealed record QuickAddChoice(Guid Id, string Name, bool IsFavorite, DateTimeOffset? LastPurchased, int PurchaseCount);
 
 public sealed class ShoppingListService(
@@ -37,38 +40,58 @@ public sealed class ShoppingListService(
         var rows = await db.ShoppingListItems
             .AsNoTracking()
             .Where(x => x.HouseholdId == household.HouseholdId)
-            .Include(x => x.CatalogItem).ThenInclude(x => x.Category)
+            .Include(x => x.CatalogItem!).ThenInclude(x => x.Category)
             .Include(x => x.AssignedStore)
             .OrderBy(x => x.IsChecked)
-            .ThenBy(x => x.CatalogItem.Category == null ? int.MaxValue : x.CatalogItem.Category.SortOrder)
-            .ThenBy(x => x.CatalogItem.Name)
+            .ThenBy(x => x.CatalogItem == null || x.CatalogItem.Category == null ? int.MaxValue : x.CatalogItem.Category.SortOrder)
+            .ThenBy(x => x.CatalogItem == null ? x.CustomName : x.CatalogItem.Name)
             .ToListAsync(cancellationToken);
 
-        var itemIds = rows.Select(x => x.CatalogItemId).ToList();
+        var itemIds = rows.Where(x => x.CatalogItemId != null).Select(x => x.CatalogItemId!.Value).ToList();
         var offers = await db.StoreOffers.AsNoTracking()
             .Where(x => x.HouseholdId == household.HouseholdId && x.IsAvailable && itemIds.Contains(x.CatalogItemId) && x.Store.IsActive)
             .Include(x => x.Store)
             .Include(x => x.Prices)
+            .ToListAsync(cancellationToken);
+        var variants = await db.ProductVariants.AsNoTracking()
+            .Where(x => x.HouseholdId == household.HouseholdId && !x.IsArchived && itemIds.Contains(x.CatalogItemId))
+            .OrderByDescending(x => x.IsPreferred).ThenBy(x => x.Name)
+            .Select(x => new
+            {
+                x.CatalogItemId,
+                x.Name,
+                x.Brand,
+                x.Size,
+                StoreNames = db.StoreOffers.Where(o => o.HouseholdId == household.HouseholdId && o.ProductVariantId == x.Id && o.IsAvailable && o.Store.IsActive)
+                    .OrderBy(o => o.Store.SortOrder).ThenBy(o => o.Store.Name).Select(o => o.Store.Name).ToArray()
+            })
             .ToListAsync(cancellationToken);
 
         return rows.Select(row => new ShoppingListRow
         {
             Id = row.Id,
             CatalogItemId = row.CatalogItemId,
-            Name = row.CatalogItem.Name,
-            Description = row.CatalogItem.Description,
-            ImagePath = row.CatalogItem.ImagePath,
+            Name = row.CatalogItem?.Name ?? row.CustomName ?? "Unnamed item",
+            Description = row.CatalogItem?.Description,
+            ImagePath = row.CatalogItem?.ImagePath,
             Quantity = row.Quantity,
             IsChecked = row.IsChecked,
-            IsFavorite = row.CatalogItem.IsFavorite,
+            IsFavorite = row.CatalogItem?.IsFavorite ?? false,
             AssignedStoreId = row.AssignedStoreId,
             AssignedStoreName = row.AssignedStore?.Name,
-            CategoryName = row.CatalogItem.Category?.Name,
+            CategoryName = row.CatalogItem?.Category?.Name,
             StorePrices = offers.Where(x => x.CatalogItemId == row.CatalogItemId)
-                .Select(x => new StorePrice(x.StoreId, x.Store.Name, x.Prices.OrderByDescending(p => p.RecordedAt).Select(p => (decimal?)p.Price).FirstOrDefault(), row.AssignedStoreId == x.StoreId, x.IsPreferred))
+                .GroupBy(x => new { x.StoreId, x.Store.Name })
+                .Select(x => new StorePrice(x.Key.StoreId, x.Key.Name,
+                    x.SelectMany(o => o.Prices).OrderByDescending(p => p.RecordedAt).Select(p => (decimal?)p.Price).FirstOrDefault(),
+                    row.AssignedStoreId == x.Key.StoreId, x.Any(o => o.IsPreferred)))
                 .OrderByDescending(x => x.IsPreferred)
                 .ThenBy(x => x.StoreName)
-                .ToArray()
+                .ToArray(),
+            ExactProducts = row.CatalogItemId is Guid catalogItemId
+                ? variants.Where(x => x.CatalogItemId == catalogItemId)
+                    .Select(x => new ExactProductSummary(x.Name, x.Brand, x.Size, x.StoreNames)).ToArray()
+                : []
         }).ToArray();
     }
 
@@ -172,36 +195,31 @@ public sealed class ShoppingListService(
                     || x.Aliases.Any(a => a.Alias.ToLower() == term)
                     || x.Variants.Any(v => v.Name.ToLower() == term || v.Barcodes.Any(b => b.Barcode == normalized))),
             cancellationToken);
-        if (item is null)
-        {
-            item = new CatalogItem { HouseholdId = household.HouseholdId, Name = normalized };
-            db.CatalogItems.Add(item);
-            await db.SaveChangesAsync(cancellationToken);
-        }
-
-        var row = await db.ShoppingListItems.SingleOrDefaultAsync(
-            x => x.HouseholdId == household.HouseholdId && x.CatalogItemId == item.Id,
-            cancellationToken);
+        var row = item is not null
+            ? await db.ShoppingListItems.SingleOrDefaultAsync(x => x.HouseholdId == household.HouseholdId && x.CatalogItemId == item.Id, cancellationToken)
+            : await db.ShoppingListItems.SingleOrDefaultAsync(x => x.HouseholdId == household.HouseholdId && x.CatalogItemId == null && x.CustomName != null && x.CustomName.ToLower() == term, cancellationToken);
         if (row is null)
         {
-            db.ShoppingListItems.Add(new ShoppingListItem
+            row = new ShoppingListItem
             {
                 HouseholdId = household.HouseholdId,
-                CatalogItemId = item.Id,
-                Quantity = item.DefaultQuantity,
+                CatalogItemId = item?.Id,
+                CustomName = item is null ? normalized : null,
+                Quantity = item?.DefaultQuantity ?? 1,
                 AddedByUserId = household.UserId
-            });
+            };
+            db.ShoppingListItems.Add(row);
         }
         else
         {
-            row.Quantity += item.DefaultQuantity;
+            row.Quantity += item?.DefaultQuantity ?? 1;
             row.IsChecked = false;
             row.CheckedAt = null;
         }
 
         await db.SaveChangesAsync(cancellationToken);
         notifier.Notify(household.HouseholdId);
-        return item.Id;
+        return item?.Id ?? row.Id;
     }
 
     public Task ToggleCheckedAsync(Guid shoppingListItemId, CancellationToken cancellationToken = default) =>
@@ -244,10 +262,11 @@ public sealed class ShoppingListService(
 
         foreach (var row in checkedItems)
         {
+            if (row.CatalogItemId is not Guid catalogItemId) continue;
             db.PurchaseHistory.Add(new PurchaseHistory
             {
                 HouseholdId = household.HouseholdId,
-                CatalogItemId = row.CatalogItemId,
+                CatalogItemId = catalogItemId,
                 StoreId = row.AssignedStoreId,
                 Quantity = row.Quantity,
                 PurchasedAt = row.CheckedAt ?? DateTimeOffset.UtcNow,

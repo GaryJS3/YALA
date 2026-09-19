@@ -234,6 +234,121 @@ public sealed class ShoppingListIsolationTests
         Assert.Empty(await verify.StoreOffers.Where(x => x.HouseholdId == firstHouse.Id).ToListAsync());
     }
 
+    [Fact]
+    public async Task ExactProductsCanBeAssignedToMultipleStoresAndAvailabilityPreservesOfferData()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+        var (_, item) = await fixture.SeedSingleHouseholdAsync();
+        var householdService = fixture.CreateHouseholdService("gary");
+        var catalogService = fixture.CreateCatalogService(householdService);
+        var storeService = fixture.CreateStoreService(householdService);
+        await storeService.SaveStoreAsync(null, "Aldi");
+        await storeService.SaveStoreAsync(null, "Walmart");
+        var stores = await storeService.GetStoresAsync();
+
+        var variantId = await catalogService.SaveVariantAsync(item.Id, "Large bag", "Acme", "20 lb", false, "12345678", stores.Select(x => x.Id).ToArray());
+        var variant = Assert.Single((await catalogService.GetDetailsAsync(item.Id))!.Variants);
+        Assert.Equal(variantId, variant.Id);
+        Assert.Equal(stores.Select(x => x.Id).ToHashSet(), variant.StoreIds);
+
+        var aldi = Assert.Single(stores, x => x.Name == "Aldi");
+        await using (var db = fixture.CreateDbContext())
+        {
+            var offer = await db.StoreOffers.SingleAsync(x => x.ProductVariantId == variantId && x.StoreId == aldi.Id);
+            db.PriceHistory.Add(new PriceHistory { HouseholdId = offer.HouseholdId, StoreOfferId = offer.Id, Price = 24.99m });
+            await db.SaveChangesAsync();
+        }
+
+        await catalogService.SetVariantStoreAvailabilityAsync(variantId, aldi.Id, false);
+        variant = Assert.Single((await catalogService.GetDetailsAsync(item.Id))!.Variants);
+        Assert.DoesNotContain(aldi.Id, variant.StoreIds);
+        await using var verify = fixture.CreateDbContext();
+        var unavailableOffer = await verify.StoreOffers.Include(x => x.Prices)
+            .SingleAsync(x => x.ProductVariantId == variantId && x.StoreId == aldi.Id);
+        Assert.False(unavailableOffer.IsAvailable);
+        Assert.Single(unavailableOffer.Prices);
+    }
+
+    [Fact]
+    public async Task ShoppingListShowsMultipleExactProductsWithTheirStores()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+        var (_, item) = await fixture.SeedSingleHouseholdAsync();
+        var householdService = fixture.CreateHouseholdService("gary");
+        var catalogService = fixture.CreateCatalogService(householdService);
+        var storeService = fixture.CreateStoreService(householdService);
+        var listService = fixture.CreateShoppingListService(householdService);
+        await storeService.SaveStoreAsync(null, "Aldi");
+        await storeService.SaveStoreAsync(null, "Walmart");
+        var stores = await storeService.GetStoresAsync();
+        var aldi = Assert.Single(stores, x => x.Name == "Aldi");
+        var walmart = Assert.Single(stores, x => x.Name == "Walmart");
+        await catalogService.SaveVariantAsync(item.Id, "Small bag", "Acme", "5 lb", false, storeIds: [aldi.Id]);
+        await catalogService.SaveVariantAsync(item.Id, "Large bag", "Acme", "20 lb", false, storeIds: [walmart.Id]);
+        await listService.AddAsync(item.Id);
+
+        var row = Assert.Single(await listService.GetRowsAsync());
+        Assert.Equal(2, row.ExactProducts.Count);
+        Assert.Equal(["Aldi"], Assert.Single(row.ExactProducts, x => x.Name == "Small bag").StoreNames);
+        Assert.Equal(["Walmart"], Assert.Single(row.ExactProducts, x => x.Name == "Large bag").StoreNames);
+        Assert.Equal(2, row.StorePrices.Count);
+    }
+
+    [Fact]
+    public async Task TypedAdHocItemCanBeAssignedAndPromotedWithoutLosingListState()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+        await fixture.SeedSingleHouseholdAsync();
+        var householdService = fixture.CreateHouseholdService("gary");
+        var listService = fixture.CreateShoppingListService(householdService);
+        var catalogService = fixture.CreateCatalogService(householdService);
+        var storeService = fixture.CreateStoreService(householdService);
+        await storeService.SaveStoreAsync(null, "Aldi");
+        var store = Assert.Single(await storeService.GetStoresAsync());
+
+        await listService.QuickAddAsync("Birthday candles");
+        var row = Assert.Single(await listService.GetRowsAsync());
+        Assert.True(row.IsAdHoc);
+        Assert.Empty(await catalogService.GetItemsAsync("Birthday candles"));
+        await listService.ChangeQuantityAsync(row.Id, 2);
+        await listService.AssignStoreAsync(row.Id, store.Id);
+
+        var pending = Assert.Single(await catalogService.GetAdHocItemsAsync());
+        Assert.Equal("Birthday candles", pending.Name);
+        Assert.Equal(3, pending.Quantity);
+        Assert.Equal("Aldi", pending.StoreName);
+        var itemId = await catalogService.PromoteAdHocItemAsync(pending.ShoppingListItemId);
+
+        var promotedRow = Assert.Single(await listService.GetRowsAsync());
+        Assert.False(promotedRow.IsAdHoc);
+        Assert.Equal(itemId, promotedRow.CatalogItemId);
+        Assert.Equal(3, promotedRow.Quantity);
+        Assert.Equal(store.Id, promotedRow.AssignedStoreId);
+        Assert.Empty(await catalogService.GetAdHocItemsAsync());
+        Assert.Equal("Birthday candles", (await catalogService.GetDetailsAsync(itemId))!.Name);
+    }
+
+    [Fact]
+    public async Task AdHocItemCanBeDeletedWithoutDeletingCatalogItems()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+        var (_, savedItem) = await fixture.SeedSingleHouseholdAsync();
+        var householdService = fixture.CreateHouseholdService("gary");
+        var listService = fixture.CreateShoppingListService(householdService);
+        var catalogService = fixture.CreateCatalogService(householdService);
+        await listService.AddAsync(savedItem.Id);
+        await listService.QuickAddAsync("One-off item");
+        var adHoc = Assert.Single(await catalogService.GetAdHocItemsAsync());
+
+        await catalogService.DeleteAdHocItemAsync(adHoc.ShoppingListItemId);
+
+        Assert.Empty(await catalogService.GetAdHocItemsAsync());
+        var remaining = Assert.Single(await listService.GetRowsAsync());
+        Assert.Equal(savedItem.Id, remaining.CatalogItemId);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => catalogService.DeleteAdHocItemAsync(remaining.Id));
+        Assert.NotNull(await catalogService.GetDetailsAsync(savedItem.Id));
+    }
+
     private sealed class TestFixture(SqliteConnection connection, DbContextOptions<ApplicationDbContext> options) : IAsyncDisposable
     {
         public static async Task<TestFixture> CreateAsync()

@@ -114,7 +114,8 @@ public sealed class ShoppingListItem
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid HouseholdId { get; set; }
-    public Guid CatalogItemId { get; set; }
+    public Guid? CatalogItemId { get; set; }
+    public string? CustomName { get; set; }
     public decimal Quantity { get; set; } = 1;
     public Guid? AssignedStoreId { get; set; }
     public string? Notes { get; set; }
@@ -122,7 +123,7 @@ public sealed class ShoppingListItem
     public string? AddedByUserId { get; set; }
     public DateTimeOffset AddedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? CheckedAt { get; set; }
-    public CatalogItem CatalogItem { get; set; } = null!;
+    public CatalogItem? CatalogItem { get; set; }
     public Store? AssignedStore { get; set; }
 }
 

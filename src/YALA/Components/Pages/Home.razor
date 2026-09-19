@@ -68,7 +68,7 @@ else
 
     @if (!string.IsNullOrWhiteSpace(query) && !suggestions.Any(x => string.Equals(x.Name, query.Trim(), StringComparison.OrdinalIgnoreCase)))
     {
-        <button class="create-from-search" type="button" @onclick="QuickAddTypedAsync">Create <strong>“@query.Trim()”</strong> as a new catalog item <span>↗</span></button>
+        <button class="create-from-search" type="button" @onclick="QuickAddTypedAsync">Add <strong>“@query.Trim()”</strong> without saving it to the catalog <span>↗</span></button>
     }
 
     <section class="list-board">
@@ -122,7 +122,7 @@ else
                     <h3><span class="store-pin" aria-hidden="true">⌖</span>@group.Name <span class="store-group-count">@group.Items.Count</span></h3>
                     @foreach (var row in group.Items)
                     {
-                        <GroceryRow Item="row" Stores="stores" OnToggle="ToggleAsync" OnQuantity="ChangeQuantityAsync" OnRemove="RemoveAsync" OnAssign="AssignStoreAsync" ShowPrices="true" />
+                        <GroceryRow Item="row" Stores="stores" OnToggle="ToggleAsync" OnQuantity="ChangeQuantityAsync" OnRemove="RemoveAsync" OnAssign="AssignStoreAsync" ShowPrices="true" ShowStoreAssignment="@(row.IsAdHoc || row.StorePrices.Count == 0)" />
                     }
                 </div>
             }

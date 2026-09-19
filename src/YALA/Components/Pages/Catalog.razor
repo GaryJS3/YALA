@@ -17,6 +17,33 @@
         <button class="filter-chip @(showArchived ? "selected" : "")" type="button" @onclick="ToggleArchived">@(showArchived ? "Hide archived" : "Show archived")</button>
         <select class="filter-select" aria-label="Filter by category" value="@categoryFilter" @onchange="e => categoryFilter = e.Value?.ToString() ?? string.Empty"><option value="">All categories</option>@foreach (var category in categories) { <option value="@category.Name">@category.Name</option> }</select>
     </div>
+    @if (adHocItems.Count > 0)
+    {
+        <section class="ad-hoc-catalog-section" aria-labelledby="ad-hoc-heading">
+            <div class="section-heading"><div><p class="eyebrow">FROM YOUR LIST</p><h2 id="ad-hoc-heading">Not saved to the catalog</h2></div><span class="item-section-count">@adHocItems.Count</span></div>
+            <p class="item-section-intro">These one-off items are only on the current shopping list. Promote one to add categories, exact products, photos, and store availability.</p>
+            <div class="ad-hoc-catalog-list">
+                @foreach (var item in adHocItems)
+                {
+                    <div class="ad-hoc-catalog-row">
+                        <div><strong>@item.Name</strong><small>@item.Quantity.ToString("0.##") qty@if (!string.IsNullOrWhiteSpace(item.StoreName)) { <text> · @item.StoreName</text> }</small></div>
+                        <div class="ad-hoc-catalog-actions">
+                            @if (pendingDeleteId == item.ShoppingListItemId)
+                            {
+                                <button type="button" class="text-button" @onclick="CancelDelete">Cancel</button>
+                                <button type="button" class="button button-danger" @onclick="() => DeleteAsync(item.ShoppingListItemId)">Delete</button>
+                            }
+                            else
+                            {
+                                <button type="button" class="text-button remove-offer-action" @onclick="() => pendingDeleteId = item.ShoppingListItemId">Delete</button>
+                                <button type="button" class="button button-outline" @onclick="() => PromoteAsync(item.ShoppingListItemId)">Save to catalog <span>↗</span></button>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </section>
+    }
     @if (!FilteredItems().Any())
     {
         <div class="catalog-empty"><span aria-hidden="true">✳</span><h2>No items here yet.</h2><p>Start with something you buy every week.</p><a class="quiet-link" href="/catalog/item/new">Add the first item ↗</a></div>
@@ -40,14 +67,32 @@
 
 @code {
     private IReadOnlyList<CatalogEntry> items = [];
+    private IReadOnlyList<AdHocCatalogEntry> adHocItems = [];
     private IReadOnlyList<Category> categories = [];
     private string search = string.Empty;
     private bool favoritesOnly;
     private bool showArchived;
     private string categoryFilter = string.Empty;
+    private Guid? pendingDeleteId;
 
     protected override async Task OnInitializedAsync() { categories = await CatalogService.GetCategoriesAsync(); await LoadAsync(); }
-    private async Task LoadAsync() => items = await CatalogService.GetItemsAsync(search, showArchived);
+    private async Task LoadAsync()
+    {
+        items = await CatalogService.GetItemsAsync(search, showArchived);
+        adHocItems = await CatalogService.GetAdHocItemsAsync();
+    }
+    private async Task PromoteAsync(Guid shoppingListItemId)
+    {
+        var itemId = await CatalogService.PromoteAdHocItemAsync(shoppingListItemId);
+        Navigation.NavigateTo($"/catalog/item/{itemId}?edit=true");
+    }
+    private void CancelDelete() => pendingDeleteId = null;
+    private async Task DeleteAsync(Guid shoppingListItemId)
+    {
+        await CatalogService.DeleteAdHocItemAsync(shoppingListItemId);
+        pendingDeleteId = null;
+        await LoadAsync();
+    }
     private IEnumerable<CatalogEntry> FilteredItems() => items.Where(x => (!favoritesOnly || x.IsFavorite) && (string.IsNullOrEmpty(categoryFilter) || x.CategoryName == categoryFilter));
     private async Task ToggleArchived() { showArchived = !showArchived; await LoadAsync(); }
     private void OpenItem(Guid id) => Navigation.NavigateTo($"/catalog/item/{id}");

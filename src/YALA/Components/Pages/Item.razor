@@ -114,6 +114,21 @@ else
                         <div class="variant-title"><strong>@variant.Name</strong>@if (variant.IsPreferred) { <span class="badge">Preferred</span> }</div>
                         @if (!string.IsNullOrWhiteSpace(variant.Brand) || !string.IsNullOrWhiteSpace(variant.Size)) { <small>@variant.Brand @variant.Size</small> }
                         <div class="barcode-list">@foreach (var barcode in variant.Barcodes) { <span class="barcode-chip">@barcode.Barcode@if (editing) { <button type="button" aria-label="Remove barcode" @onclick="() => RemoveBarcodeAsync(barcode.Id)">×</button> }</span> }</div>
+                        @if (details.Stores.Count > 0)
+                        {
+                            <div class="variant-stores">
+                                <span>Available at</span>
+                                <div class="variant-store-list">
+                                    @foreach (var store in details.Stores)
+                                    {
+                                        <label class="variant-store @(variant.StoreIds.Contains(store.Id) ? "selected" : "") @(store.IsActive ? "" : "inactive")">
+                                            <input type="checkbox" checked="@variant.StoreIds.Contains(store.Id)" disabled="@(!editing)" @onchange="e => SetVariantStoreAsync(variant.Id, store.Id, (bool)(e.Value ?? false))" />
+                                            <span>✓</span> @store.Name
+                                        </label>
+                                    }
+                                </div>
+                            </div>
+                        }
                         @if (editing)
                         {
                             <label class="variant-image-upload">Product photo <InputFile accept="image/jpeg,image/png,image/webp" OnChange="args => UploadVariantImageAsync(variant.Id, args)" /></label>
@@ -150,6 +165,21 @@ else
                         }
                     </div>
                     <div class="form-grid"><div class="form-field"><label>Product name</label><input @bind="variantName" @bind:event="oninput" placeholder="Purina ONE Indoor Advantage" /></div><div class="form-field"><label>Brand</label><input @bind="variantBrand" @bind:event="oninput" placeholder="Purina ONE" /></div><div class="form-field"><label>Size</label><input @bind="variantSize" @bind:event="oninput" placeholder="16 lb" /></div><div class="form-field"><label>Barcode</label><input @bind="variantBarcode" @bind:event="oninput" inputmode="numeric" placeholder="017800123456" /></div></div>
+                    @if (details.Stores.Count > 0)
+                    {
+                        <fieldset class="variant-store-picker">
+                            <legend>Stores that carry this product</legend>
+                            <div class="variant-store-list">
+                                @foreach (var store in details.Stores)
+                                {
+                                    <label class="variant-store @(variantStoreIds.Contains(store.Id) ? "selected" : "") @(store.IsActive ? "" : "inactive")">
+                                        <input type="checkbox" checked="@variantStoreIds.Contains(store.Id)" @onchange="e => SetPendingVariantStore(store.Id, (bool)(e.Value ?? false))" />
+                                        <span>✓</span> @store.Name
+                                    </label>
+                                }
+                            </div>
+                        </fieldset>
+                    }
                     <label class="preferred-checkbox"><input type="checkbox" @bind="variantPreferred" /> Preferred product</label><button type="button" class="button button-outline" @onclick="AddVariantAsync">Add product <span>+</span></button>
                 </div>
             }
@@ -159,6 +189,7 @@ else
 
 @code {
     [Parameter] public Guid? Id { get; set; }
+    [SupplyParameterFromQuery(Name = "edit")] public bool EditOnLoad { get; set; }
     private bool IsNew => Id is null;
     private bool loading = true, editing, saving, lookingUp, scanning;
     private CatalogDetails? details;
@@ -168,13 +199,14 @@ else
     private Guid? editCategoryId;
     private decimal editQuantity = 1;
     private bool editFavorite, editArchived, variantPreferred;
+    private HashSet<Guid> variantStoreIds = [];
     private ProductLookupResult? lookupResult;
     private string? lookupMessage;
     private ElementReference scannerVideo;
     private IJSObjectReference? scannerModule;
     private DotNetObjectReference<Item>? dotNetReference;
 
-    protected override async Task OnParametersSetAsync() { loading = true; categories = await CatalogService.GetCategoriesAsync(); details = Id is Guid id ? await CatalogService.GetDetailsAsync(id) : null; editing = IsNew; CopyToEdit(); loading = false; }
+    protected override async Task OnParametersSetAsync() { loading = true; categories = await CatalogService.GetCategoriesAsync(); details = Id is Guid id ? await CatalogService.GetDetailsAsync(id) : null; editing = IsNew || EditOnLoad; CopyToEdit(); loading = false; }
     private void CopyToEdit() { editName = details?.Name ?? string.Empty; editDescription = details?.Description; editCategoryId = details?.CategoryId; editQuantity = details?.DefaultQuantity ?? 1; editFavorite = details?.IsFavorite ?? false; editArchived = details?.IsArchived ?? false; }
     private void BeginEdit() { CopyToEdit(); editing = true; error = success = null; }
     private void CancelEdit() { CopyToEdit(); editing = false; error = null; }
@@ -182,6 +214,12 @@ else
     private async Task SaveAsync() { try { saving = true; var id = await CatalogService.SaveAsync(Id, editName, editDescription, editCategoryId, editQuantity); if (IsNew) { Navigation.NavigateTo($"/catalog/item/{id}"); return; } await CatalogService.SetFavoriteAsync(id, editFavorite); await CatalogService.SetArchivedAsync(id, editArchived); await ReloadAsync(); editing = false; success = "Item changes saved."; } catch (Exception ex) when (ex is ArgumentException or InvalidOperationException) { error = ex.Message; } finally { saving = false; } }
     private async Task ReloadAsync() { if (Id is Guid id) details = await CatalogService.GetDetailsAsync(id); }
     private async Task SetStoreAsync(Guid storeId, bool available) => await RunDetailActionAsync(() => CatalogService.SetStoreAvailabilityAsync(Id!.Value, storeId, available));
+    private async Task SetVariantStoreAsync(Guid variantId, Guid storeId, bool available) => await RunDetailActionAsync(() => CatalogService.SetVariantStoreAvailabilityAsync(variantId, storeId, available));
+    private void SetPendingVariantStore(Guid storeId, bool available)
+    {
+        if (available) variantStoreIds.Add(storeId);
+        else variantStoreIds.Remove(storeId);
+    }
     private async Task AddAliasAsync() { await RunDetailActionAsync(() => CatalogService.AddAliasAsync(Id!.Value, aliasInput)); aliasInput = string.Empty; }
     private async Task RemoveAliasAsync(Guid aliasId) => await RunDetailActionAsync(() => CatalogService.RemoveAliasAsync(aliasId));
     private async Task AddVariantAsync()
@@ -190,7 +228,7 @@ else
         {
             success = null;
             var barcode = new string(variantBarcode.Where(char.IsLetterOrDigit).ToArray());
-            var variantId = await CatalogService.SaveVariantAsync(Id!.Value, variantName, variantBrand, variantSize, variantPreferred, variantBarcode);
+            var variantId = await CatalogService.SaveVariantAsync(Id!.Value, variantName, variantBrand, variantSize, variantPreferred, variantBarcode, variantStoreIds);
             var lookupImageUrl = lookupResult?.Barcode == barcode ? lookupResult.ImageUrl : null;
             if (!string.IsNullOrWhiteSpace(lookupImageUrl))
             {
@@ -204,6 +242,7 @@ else
             await ReloadAsync();
             variantName = variantBrand = variantSize = variantBarcode = string.Empty;
             variantPreferred = false;
+            variantStoreIds = [];
             lookupResult = null;
             lookupMessage = null;
         }
