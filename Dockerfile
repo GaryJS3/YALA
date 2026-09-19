@@ -3,6 +3,10 @@ WORKDIR /src
 COPY src/YALA/YALA.csproj src/YALA/
 RUN dotnet restore src/YALA/YALA.csproj
 COPY src/YALA/ src/YALA/
+# Dockhand's direct-host staging can represent binary assets as base64-prefixed
+# text. Normalize only those files while leaving ordinary Git checkouts intact.
+RUN find src/YALA/wwwroot -type f \( -name '*.png' -o -name '*.jpg' -o -name '*.jpeg' -o -name '*.webp' \) -exec sh -c \
+    'for file do if [ "$(head -c 7 "$file")" = "base64:" ]; then tail -c +8 "$file" | base64 -d > "$file.decoded" && mv "$file.decoded" "$file"; fi; done' sh {} +
 RUN dotnet publish src/YALA/YALA.csproj --configuration Release --output /app/publish --no-restore /p:UseAppHost=false
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
