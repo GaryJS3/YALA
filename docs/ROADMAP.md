@@ -43,7 +43,7 @@ Pantry inventory, expiration tracking, meal planning, recipes, nutrition trackin
 
 ## Progress notes
 
-- 2026-09-19: Adopted `wwwroot/yala.png` as the YALA brand mark across the app shell and setup screens, preserving the existing slight angle and using it as the browser icon.
+- 2026-09-19: Adopted `wwwroot/yala.png` as the YALA brand mark across the app shell and setup screens, preserving the existing slight angle and using the static-asset manifest for cache-safe browser delivery.
 - 2026-09-19: Simplified the shopping-list header to show the total until items are checked, then show the remaining/total count. Catalog rows now use item or preferred-product images and mirror the list's descriptions, exact-product details, and available-store marks.
 - 2026-09-19: Exact-product photos now seed the catalog item's own image only when it is missing, so later products do not replace the established item photo; the item photo control clearly supports replacing that image after creation.
 - 2026-09-19: Exact products can now be edited after creation for name, brand, size, preferred-product status, barcodes, photos, and store availability, with barcode uniqueness validation and preferred-product switching preserved.
