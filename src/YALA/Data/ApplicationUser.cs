@@ -8,4 +8,6 @@ public class ApplicationUser : IdentityUser
     public string DisplayName { get; set; } = string.Empty;
 
     public Guid? DefaultHouseholdId { get; set; }
+
+    public bool IsAdministrator { get; set; }
 }

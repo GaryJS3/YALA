@@ -85,7 +85,12 @@
             return;
         }
 
-        var user = new ApplicationUser { UserName = input.UserName.Trim(), DisplayName = input.DisplayName.Trim() };
+        var user = new ApplicationUser
+        {
+            UserName = input.UserName.Trim(),
+            DisplayName = input.DisplayName.Trim(),
+            IsAdministrator = true
+        };
         var result = await UserManager.CreateAsync(user, input.Password);
         if (!result.Succeeded)
         {

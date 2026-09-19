@@ -20,6 +20,16 @@ public sealed class StoreService(IDbContextFactory<ApplicationDbContext> dbConte
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<StoreSummary?> GetStoreAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var household = await RequireHouseholdAsync(cancellationToken);
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        return await db.Stores.AsNoTracking()
+            .Where(x => x.Id == id && x.HouseholdId == household.HouseholdId)
+            .Select(x => new StoreSummary(x.Id, x.Name, x.IsActive, x.Offers.Count(o => o.IsAvailable), x.SortOrder))
+            .SingleOrDefaultAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<StoreOfferSummary>> GetOffersAsync(Guid storeId, CancellationToken cancellationToken = default)
     {
         var household = await RequireHouseholdAsync(cancellationToken);
@@ -124,6 +134,19 @@ public sealed class StoreService(IDbContextFactory<ApplicationDbContext> dbConte
         {
             offer.IsPreferred = false;
         }
+        await db.SaveChangesAsync(cancellationToken);
+        notifier.Notify(household.HouseholdId);
+    }
+
+    public async Task RemoveOfferAsync(Guid offerId, CancellationToken cancellationToken = default)
+    {
+        var household = await RequireHouseholdAsync(cancellationToken);
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var offer = await db.StoreOffers.SingleOrDefaultAsync(x => x.Id == offerId && x.HouseholdId == household.HouseholdId, cancellationToken)
+            ?? throw new InvalidOperationException("That store offer is not in this household.");
+        offer.IsAvailable = false;
+        offer.IsPreferred = false;
+        offer.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
         notifier.Notify(household.HouseholdId);
     }

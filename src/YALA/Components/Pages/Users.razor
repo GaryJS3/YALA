@@ -1,0 +1,216 @@
+@page "/users"
+@rendermode InteractiveServer
+@attribute [Authorize(Policy = UserAdministrationService.AdministratorPolicy)]
+@using System.ComponentModel.DataAnnotations
+@inject UserAdministrationService UserAdministration
+@inject HouseholdService HouseholdService
+
+<PageTitle>User management</PageTitle>
+
+<div class="page-heading">
+    <div>
+        <p class="eyebrow">ADMINISTRATION</p>
+        <h1>User management</h1>
+        <p class="muted-copy">Create local accounts, replace passwords, or remove accounts from this YALA instance.</p>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(error))
+{
+    <div class="alert alert-danger" role="alert">@error</div>
+}
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="alert alert-success" role="status">@message</div>
+}
+
+<section class="content-card user-create-panel">
+    <div class="section-heading">
+        <div><p class="eyebrow">NEW ACCOUNT</p><h2>Create a user</h2></div>
+    </div>
+    <EditForm Model="createInput" OnValidSubmit="CreateUserAsync">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+        <div class="form-grid">
+            <div class="form-field">
+                <label for="new-display-name">Name</label>
+                <InputText id="new-display-name" @bind-Value="createInput.DisplayName" autocomplete="off" />
+            </div>
+            <div class="form-field">
+                <label for="new-username">Username</label>
+                <InputText id="new-username" @bind-Value="createInput.UserName" autocomplete="off" />
+            </div>
+            <div class="form-field">
+                <label for="new-password">Initial password</label>
+                <InputText id="new-password" type="password" @bind-Value="createInput.Password" autocomplete="new-password" />
+            </div>
+            <label class="user-household-option">
+                <InputCheckbox @bind-Value="createInput.AddToCurrentHousehold" disabled="@(currentHousehold is null)" />
+                Add to @(currentHousehold?.HouseholdName ?? "the current household")
+            </label>
+        </div>
+        <button class="button button-primary" type="submit" disabled="@busy">Create user</button>
+    </EditForm>
+</section>
+
+<section class="content-card user-list-panel">
+    <div class="section-heading">
+        <div><p class="eyebrow">LOCAL ACCOUNTS</p><h2>@users.Count users</h2></div>
+    </div>
+    @foreach (var user in users)
+    {
+        <article class="managed-user" @key="user.Id">
+            <div class="managed-user-summary">
+                <span class="member-avatar">@FirstLetter(user.DisplayName)</span>
+                <div>
+                    <strong>@user.DisplayName</strong>
+                    <span>@@@user.UserName @if (user.IsAdministrator) { <em>Administrator</em> }</span>
+                    <small>@(user.Households.Count == 0 ? "No households" : string.Join(" · ", user.Households))</small>
+                </div>
+            </div>
+            <div class="managed-user-actions">
+                @if (resetUserId == user.Id)
+                {
+                    <EditForm Model="resetInput" OnValidSubmit="ResetPasswordAsync" class="inline-user-form">
+                        <DataAnnotationsValidator />
+                        <InputText type="password" @bind-Value="resetInput.Password" autocomplete="new-password" placeholder="New password" aria-label="New password" />
+                        <button class="button button-primary" type="submit" disabled="@busy">Save password</button>
+                        <button class="button button-outline" type="button" @onclick="CancelActions">Cancel</button>
+                        <ValidationMessage For="() => resetInput.Password" />
+                    </EditForm>
+                }
+                else if (deleteUserId == user.Id)
+                {
+                    <div class="inline-user-form" role="alert">
+                        <span>Delete this account and all household memberships?</span>
+                        <button class="button button-danger" type="button" @onclick="() => DeleteUserAsync(user)" disabled="@busy">Delete</button>
+                        <button class="button button-outline" type="button" @onclick="CancelActions">Cancel</button>
+                    </div>
+                }
+                else
+                {
+                    <button class="button button-outline" type="button" @onclick="() => BeginReset(user.Id)">Reset password</button>
+                    <button class="button button-danger" type="button" @onclick="() => BeginDelete(user.Id)">Delete</button>
+                }
+            </div>
+        </article>
+    }
+</section>
+
+@code {
+    private IReadOnlyList<ManagedUser> users = [];
+    private CurrentHouseholdContext? currentHousehold;
+    private CreateUserInput createInput = new();
+    private ResetPasswordInput resetInput = new();
+    private string? resetUserId;
+    private string? deleteUserId;
+    private string? error;
+    private string? message;
+    private bool busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        currentHousehold = await HouseholdService.GetCurrentAsync();
+        createInput.AddToCurrentHousehold = currentHousehold is not null;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync() => users = await UserAdministration.GetUsersAsync();
+
+    private async Task CreateUserAsync()
+    {
+        await RunAsync(async () =>
+        {
+            await UserAdministration.CreateUserAsync(
+                createInput.DisplayName,
+                createInput.UserName,
+                createInput.Password,
+                createInput.AddToCurrentHousehold ? currentHousehold?.HouseholdId : null);
+            message = $"Account {createInput.UserName.Trim()} created.";
+            createInput = new() { AddToCurrentHousehold = currentHousehold is not null };
+        });
+    }
+
+    private void BeginReset(string userId)
+    {
+        resetUserId = userId;
+        deleteUserId = null;
+        resetInput = new();
+        error = message = null;
+    }
+
+    private void BeginDelete(string userId)
+    {
+        deleteUserId = userId;
+        resetUserId = null;
+        error = message = null;
+    }
+
+    private void CancelActions()
+    {
+        resetUserId = deleteUserId = null;
+        resetInput = new();
+    }
+
+    private async Task ResetPasswordAsync()
+    {
+        var user = users.Single(x => x.Id == resetUserId);
+        await RunAsync(async () =>
+        {
+            await UserAdministration.ResetPasswordAsync(user.Id, resetInput.Password);
+            message = $"Password replaced for {user.UserName}. Existing sessions will be revalidated.";
+            CancelActions();
+        });
+    }
+
+    private async Task DeleteUserAsync(ManagedUser user)
+    {
+        await RunAsync(async () =>
+        {
+            await UserAdministration.DeleteUserAsync(user.Id);
+            message = $"Account {user.UserName} deleted.";
+            CancelActions();
+        });
+    }
+
+    private async Task RunAsync(Func<Task> action)
+    {
+        busy = true;
+        error = message = null;
+        try
+        {
+            await action();
+            await LoadAsync();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or UnauthorizedAccessException or DbUpdateException)
+        {
+            error = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private static string FirstLetter(string value) => string.IsNullOrWhiteSpace(value) ? "?" : value[..1].ToUpperInvariant();
+
+    private sealed class CreateUserInput
+    {
+        [Required, StringLength(80, MinimumLength = 1)]
+        public string DisplayName { get; set; } = string.Empty;
+
+        [Required, StringLength(40, MinimumLength = 2), RegularExpression(@"^[a-zA-Z0-9_.-]+$", ErrorMessage = "Use letters, numbers, dots, dashes, and underscores.")]
+        public string UserName { get; set; } = string.Empty;
+
+        [Required, StringLength(100, MinimumLength = 8)]
+        public string Password { get; set; } = string.Empty;
+
+        public bool AddToCurrentHousehold { get; set; }
+    }
+
+    private sealed class ResetPasswordInput
+    {
+        [Required, StringLength(100, MinimumLength = 8)]
+        public string Password { get; set; } = string.Empty;
+    }
+}

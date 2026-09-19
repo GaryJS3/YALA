@@ -171,6 +171,30 @@ public sealed class ShoppingListIsolationTests
     }
 
     [Fact]
+    public async Task StoreDetailsStayInHouseholdAndRemovingAnItemPreservesItsPriceHistory()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+        var (_, item) = await fixture.SeedSingleHouseholdAsync();
+        var service = fixture.CreateStoreService(fixture.CreateHouseholdService("gary"));
+        await service.SaveStoreAsync(null, "Aldi");
+        var store = Assert.Single(await service.GetStoresAsync());
+        Assert.Equal(store, await service.GetStoreAsync(store.Id));
+
+        await service.SaveOfferAsync(store.Id, item.Id, "Dairy", 3.50m);
+        var offer = Assert.Single(await service.GetOffersAsync(store.Id));
+        await service.RemoveOfferAsync(offer.Id);
+
+        Assert.Empty(await service.GetOffersAsync(store.Id));
+        Assert.Equal(0, (await service.GetStoreAsync(store.Id))!.OfferCount);
+        await using var db = fixture.CreateDbContext();
+        var storedOffer = Assert.Single(await db.StoreOffers.Include(x => x.Prices).ToListAsync());
+        Assert.False(storedOffer.IsAvailable);
+        Assert.False(storedOffer.IsPreferred);
+        Assert.Single(storedOffer.Prices);
+        Assert.Null(await service.GetStoreAsync(Guid.NewGuid()));
+    }
+
+    [Fact]
     public async Task ItemPageStoreChecksToggleGenericAvailabilityWithoutLosingOfferData()
     {
         await using var fixture = await TestFixture.CreateAsync();

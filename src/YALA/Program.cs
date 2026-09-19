@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using YALA.Components;
@@ -55,6 +56,7 @@ builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<StoreService>();
 builder.Services.AddScoped<ImageService>();
 builder.Services.AddScoped<ProductLookupService>();
+builder.Services.AddScoped<UserAdministrationService>();
 builder.Services.AddSingleton<ShoppingListChangeNotifier>();
 builder.Services.AddHttpClient("OpenFacts", client =>
 {
@@ -79,6 +81,13 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
     .AddEntityFrameworkStores<ApplicationDbContext>()
     .AddSignInManager()
     .AddDefaultTokenProviders();
+
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(UserAdministrationService.AdministratorPolicy, policy =>
+        policy.Requirements.Add(new AdministratorRequirement()));
+});
+builder.Services.AddScoped<IAuthorizationHandler, AdministratorAuthorizationHandler>();
 
 builder.Services.ConfigureApplicationCookie(options =>
 {

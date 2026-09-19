@@ -29,6 +29,9 @@
                 <NavLink href="/catalog"><span class="nav-icon">▦</span>Catalog</NavLink>
                 <NavLink href="/stores"><span class="nav-icon">⌂</span>Stores</NavLink>
                 <NavLink href="/households"><span class="nav-icon">⌘</span>Households</NavLink>
+                <AuthorizeView Policy="@UserAdministrationService.AdministratorPolicy">
+                    <NavLink href="/users"><span class="nav-icon">♙</span>Users</NavLink>
+                </AuthorizeView>
             </nav>
             <div class="rail-note" title="YALA @BuildLabel"><span class="rail-note-dot"></span> @BuildLabel</div>
         </aside>

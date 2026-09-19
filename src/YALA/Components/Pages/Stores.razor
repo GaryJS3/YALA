@@ -1,24 +1,21 @@
 @page "/stores"
 @attribute [Authorize]
 @inject StoreService StoreService
+@inject NavigationManager Navigation
 
 <PageTitle>Stores · YALA</PageTitle>
 
 <section class="page-heading">
-    <div>
-        <p class="eyebrow">YOUR USUAL STOPS</p>
-        <h1>Stores</h1>
-        <p class="heading-subtitle">Keep your nearby stores and the items you find there.</p>
-    </div>
+    <div><p class="eyebrow">YOUR USUAL STOPS</p><h1>Stores</h1><p class="heading-subtitle">Keep your nearby stores and open one to manage what you find there.</p></div>
 </section>
 
 <section class="store-setup content-card">
-    <div class="section-heading"><h2>@(editingStoreId is null ? "Add a store" : "Rename store")</h2>@if (editingStoreId is not null) { <button class="text-button" type="button" @onclick="CancelEdit">Cancel</button> }</div>
+    <div class="section-heading"><h2>Add a store</h2></div>
     <div class="inline-form">
         <input class="search-field" @bind="storeName" @bind:event="oninput" placeholder="e.g. Aldi, Walmart, the Saturday market" aria-label="Store name" />
-        <button class="button button-primary" type="button" @onclick="SaveStoreAsync">@(editingStoreId is null ? "Add store" : "Save name") <span>↗</span></button>
+        <button class="button button-primary" type="button" @onclick="SaveStoreAsync">Add store <span>↗</span></button>
     </div>
-    @if (!string.IsNullOrWhiteSpace(error)) { <p class="notice error">@error</p> }
+    @if (!string.IsNullOrWhiteSpace(error)) { <p class="notice error" role="alert">@error</p> }
 </section>
 
 <div class="section-heading"><h2>Your stores</h2><span class="badge">@stores.Count</span></div>
@@ -32,116 +29,32 @@ else
     <div class="store-card-grid">
         @foreach (var store in stores)
         {
-            <article class="store-card @(selectedStoreId == store.Id ? "store-selected" : "")">
+            <article class="store-card store-list-card @(store.IsActive ? "" : "store-inactive")" @onclick="() => OpenStore(store.Id)">
                 <div class="store-card-head"><h3>@store.Name</h3><span class="status-dot @(store.IsActive ? "" : "off")"></span></div>
-                <p>@store.OfferCount item@(store.OfferCount == 1 ? "" : "s") tracked</p>
-                <div class="store-card-actions">
-                    <button type="button" class="quiet-link" @onclick="() => SelectStoreAsync(store.Id)">@(selectedStoreId == store.Id ? "Selected" : "Manage items")</button>
+                <p>@store.OfferCount item@(store.OfferCount == 1 ? "" : "s") tracked · @(store.IsActive ? "Active" : "Paused")</p>
+                <div class="store-card-actions" @onclick:stopPropagation="true">
+                    <a class="quiet-link" href="/stores/@store.Id">Manage store</a><span class="store-order-spacer"></span>
                     <button type="button" class="icon-button store-order-button" aria-label="Move @store.Name up" disabled="@(store.SortOrder == stores.Min(x => x.SortOrder))" @onclick="() => MoveStoreAsync(store.Id, -1)">↑</button>
                     <button type="button" class="icon-button store-order-button" aria-label="Move @store.Name down" disabled="@(store.SortOrder == stores.Max(x => x.SortOrder))" @onclick="() => MoveStoreAsync(store.Id, 1)">↓</button>
-                    <button type="button" class="text-button" @onclick="() => BeginEdit(store)">Rename</button>
-                    <button type="button" class="text-button" @onclick="() => SetActiveAsync(store)">@(store.IsActive ? "Pause" : "Reactivate")</button>
+                    <span class="catalog-row-arrow" aria-hidden="true">→</span>
                 </div>
             </article>
         }
     </div>
 }
 
-@if (selectedStoreId is Guid activeStoreId && stores.FirstOrDefault(x => x.Id == activeStoreId) is StoreSummary activeStore && activeStore.IsActive)
-{
-    <section class="content-card offer-panel">
-        <div class="section-heading"><div><p class="eyebrow">@activeStore.Name</p><h2>Items at this store</h2></div></div>
-        <div class="offer-add-form">
-            <div class="form-field"><label for="offer-item">Catalog item</label><select id="offer-item" value="@catalogItemId" @onchange="SelectCatalogItemAsync"><option value="">Choose an item</option>@foreach (var item in catalogItems) { <option value="@item.Id">@item.Name</option> }</select></div>
-            <div class="form-field"><label for="offer-variant">Exact product (optional)</label><select id="offer-variant" value="@productVariantId" @onchange="SelectVariant"><option value="">Any product</option>@foreach (var variant in productVariants) { <option value="@variant.Id">@variant.Name</option> }</select></div>
-            <div class="form-field"><label for="offer-aisle">Aisle / section</label><input id="offer-aisle" @bind="aisle" @bind:event="oninput" placeholder="Pets, aisle 4…" /></div>
-            <div class="form-field"><label for="offer-price">Price (optional)</label><input id="offer-price" type="number" min="0" step="0.01" @bind="priceText" @bind:event="oninput" placeholder="0.00" /></div>
-            <button type="button" class="button button-primary offer-save" @onclick="AddOfferAsync">Save item here <span>↗</span></button>
-        </div>
-        @if (offers.Count == 0)
-        {
-            <p class="muted-copy offer-empty">Nothing tracked here yet. Add an item above; store-specific prices are optional.</p>
-        }
-        else
-        {
-            <div class="data-list">
-                @foreach (var offer in offers)
-                {
-                    <div class="data-row"><div class="store-offer-mark">⌖</div><div class="data-row-main"><strong>@offer.ItemName @if (offer.IsPreferred) { <span class="preferred-offer-badge">Preferred</span> }</strong><small>@(offer.ProductName ?? "Any product") · @(offer.Aisle ?? "Aisle not noted") · Avg. @(offer.AveragePrice is decimal average ? average.ToString("C") : "no price yet")</small>@if (offer.PriceHistory.Count > 0) { <details class="price-history"><summary>@offer.PriceHistory.Count price update@(offer.PriceHistory.Count == 1 ? "" : "s")</summary><ul>@foreach (var point in offer.PriceHistory) { <li><span>@point.RecordedAt.ToLocalTime().ToString("MMM d, yyyy")</span><strong>@point.Price.ToString("C")</strong></li> }</ul></details> }</div><span class="offer-last">@(offer.LastPrice is decimal last ? last.ToString("C") : "—")</span><button type="button" class="text-button preferred-offer-action" @onclick="() => SetPreferredOfferAsync(offer)">@(offer.IsPreferred ? "Clear preferred" : "Prefer this store")</button></div>
-                }
-            </div>
-        }
-    </section>
-}
-
 @code {
     private IReadOnlyList<StoreSummary> stores = [];
-    private IReadOnlyList<StoreOfferSummary> offers = [];
-    private IReadOnlyList<(Guid Id, string Name)> catalogItems = [];
-    private IReadOnlyList<(Guid Id, string Name)> productVariants = [];
-    private Guid? selectedStoreId;
-    private Guid? editingStoreId;
-    private Guid? catalogItemId;
-    private Guid? productVariantId;
     private string storeName = string.Empty;
-    private string aisle = string.Empty;
-    private string priceText = string.Empty;
     private string? error;
 
-    protected override async Task OnInitializedAsync()
-    {
-        catalogItems = await StoreService.GetCatalogItemsAsync();
-        await LoadAsync();
-    }
-
-    private async Task LoadAsync()
-    {
-        stores = await StoreService.GetStoresAsync();
-        if (selectedStoreId is Guid id && stores.Any(x => x.Id == id)) offers = await StoreService.GetOffersAsync(id);
-        else if (stores.FirstOrDefault(x => x.IsActive) is StoreSummary first) { selectedStoreId = first.Id; offers = await StoreService.GetOffersAsync(first.Id); }
-        else { selectedStoreId = null; offers = []; }
-    }
-
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+    private async Task LoadAsync() => stores = await StoreService.GetStoresAsync();
+    private void OpenStore(Guid id) => Navigation.NavigateTo($"/stores/{id}");
+    private async Task MoveStoreAsync(Guid id, int direction) { await StoreService.MoveStoreAsync(id, direction); await LoadAsync(); }
     private async Task SaveStoreAsync()
     {
-        try
-        {
-            await StoreService.SaveStoreAsync(editingStoreId, storeName);
-            storeName = string.Empty; editingStoreId = null; error = null; await LoadAsync();
-        }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or DbUpdateException) { error = ex.Message; }
-    }
-
-    private void BeginEdit(StoreSummary store) { editingStoreId = store.Id; storeName = store.Name; error = null; }
-    private void CancelEdit() { editingStoreId = null; storeName = string.Empty; }
-    private async Task SetActiveAsync(StoreSummary store) { await StoreService.SetActiveAsync(store.Id, !store.IsActive); await LoadAsync(); }
-    private async Task SelectStoreAsync(Guid id) { selectedStoreId = id; offers = await StoreService.GetOffersAsync(id); }
-    private async Task MoveStoreAsync(Guid id, int direction) { await StoreService.MoveStoreAsync(id, direction); await LoadAsync(); }
-    private async Task SetPreferredOfferAsync(StoreOfferSummary offer) { await StoreService.SetPreferredOfferAsync(offer.Id, !offer.IsPreferred); await LoadAsync(); }
-    private async Task SelectCatalogItemAsync(ChangeEventArgs args)
-    {
-        catalogItemId = Guid.TryParse(args.Value?.ToString(), out var id) ? id : null;
-        productVariantId = null;
-        productVariants = catalogItemId is Guid itemId ? await StoreService.GetVariantsAsync(itemId) : [];
-    }
-    private void SelectVariant(ChangeEventArgs args) => productVariantId = Guid.TryParse(args.Value?.ToString(), out var id) ? id : null;
-
-    private async Task AddOfferAsync()
-    {
-        if (selectedStoreId is not Guid storeId || catalogItemId is not Guid itemId) { error = "Choose a catalog item first."; return; }
-        decimal? price = null;
-        if (!string.IsNullOrWhiteSpace(priceText))
-        {
-            if (!decimal.TryParse(priceText, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var parsed) || parsed < 0)
-            { error = "Enter a valid price, or leave the price blank."; return; }
-            price = parsed;
-        }
-
-        try
-        {
-            await StoreService.SaveOfferAsync(storeId, itemId, aisle, price, productVariantId);
-            aisle = string.Empty; priceText = string.Empty; error = null; await LoadAsync();
-        }
+        try { await StoreService.SaveStoreAsync(null, storeName); storeName = string.Empty; error = null; await LoadAsync(); }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or DbUpdateException) { error = ex.Message; }
     }
 }
