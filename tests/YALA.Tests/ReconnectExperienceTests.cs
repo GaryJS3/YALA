@@ -3,12 +3,13 @@ namespace YALA.Tests;
 public sealed class ReconnectExperienceTests
 {
     [Fact]
-    public void App_UsesThreeSecondReconnectInterval()
+    public void App_UsesFastBackoffReconnectSchedule()
     {
         var app = ReadRepositoryFile("src", "YALA", "Components", "App.razor");
 
         Assert.Contains("autostart=\"false\"", app, StringComparison.Ordinal);
-        Assert.Contains("retryIntervalMilliseconds: 3000", app, StringComparison.Ordinal);
+        Assert.Contains("maxRetries: 6", app, StringComparison.Ordinal);
+        Assert.Contains("Array.prototype.at.bind([0, 1000, 2000, 5000, 10000, 30000])", app, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -22,6 +23,9 @@ public sealed class ReconnectExperienceTests
         Assert.Contains("role=\"status\"", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("<dialog", markup, StringComparison.Ordinal);
         Assert.DoesNotContain("showModal", script, StringComparison.Ordinal);
+        Assert.Contains("const reconnectBannerDelayMilliseconds = 5000", script, StringComparison.Ordinal);
+        Assert.Contains("scheduleReconnectBanner();", script, StringComparison.Ordinal);
+        Assert.Contains("hideReconnectBanner();", script, StringComparison.Ordinal);
         Assert.Contains("position: fixed", styles, StringComparison.Ordinal);
         Assert.Contains("inset: 0 0 auto", styles, StringComparison.Ordinal);
         Assert.DoesNotContain("::backdrop", styles, StringComparison.Ordinal);

@@ -1,6 +1,8 @@
 // Set up event handlers
 const reconnectBanner = document.getElementById("components-reconnect-modal");
 reconnectBanner.addEventListener("components-reconnect-state-changed", handleReconnectStateChanged);
+const reconnectBannerDelayMilliseconds = 5000;
+let reconnectBannerDelay;
 
 const retryButton = document.getElementById("components-reconnect-button");
 retryButton.addEventListener("click", retry);
@@ -10,14 +12,38 @@ resumeButton.addEventListener("click", resume);
 
 function handleReconnectStateChanged(event) {
     if (event.detail.state === "show") {
-        reconnectBanner.hidden = false;
+        scheduleReconnectBanner();
     } else if (event.detail.state === "hide") {
-        reconnectBanner.hidden = true;
+        hideReconnectBanner();
     } else if (event.detail.state === "failed") {
+        showReconnectBanner();
         document.addEventListener("visibilitychange", retryWhenDocumentBecomesVisible);
     } else if (event.detail.state === "rejected") {
         location.reload();
     }
+}
+
+function scheduleReconnectBanner() {
+    if (!reconnectBanner.hidden || reconnectBannerDelay) {
+        return;
+    }
+
+    reconnectBannerDelay = setTimeout(() => {
+        reconnectBannerDelay = undefined;
+        showReconnectBanner();
+    }, reconnectBannerDelayMilliseconds);
+}
+
+function showReconnectBanner() {
+    clearTimeout(reconnectBannerDelay);
+    reconnectBannerDelay = undefined;
+    reconnectBanner.hidden = false;
+}
+
+function hideReconnectBanner() {
+    clearTimeout(reconnectBannerDelay);
+    reconnectBannerDelay = undefined;
+    reconnectBanner.hidden = true;
 }
 
 async function retry() {
@@ -36,7 +62,7 @@ async function retry() {
             if (!resumeSuccessful) {
                 location.reload();
             } else {
-                reconnectBanner.hidden = true;
+                hideReconnectBanner();
             }
         }
     } catch (err) {
@@ -52,6 +78,7 @@ async function resume() {
             location.reload();
         }
     } catch {
+        showReconnectBanner();
         reconnectBanner.classList.replace("components-reconnect-paused", "components-reconnect-resume-failed");
     }
 }
