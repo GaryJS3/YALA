@@ -109,7 +109,7 @@ h1, h2, h3, p { margin-top: 0; }
 .grocery-item-link:not(.is-static):hover .grocery-name { color: #587057; }
 .grocery-item-link:not(.is-static):focus-visible { box-shadow: 0 0 0 3px #d8e2d5; }
 .grocery-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.grocery-thumb { width: 34px; height: 34px; flex: 0 0 34px; border-radius: 8px; }
+.grocery-thumb { width: 60px; height: 70px; flex: 0 0 60px; border-radius: 8px; }
 .grocery-name-line { display: flex; align-items: center; gap: 6px; }
 .grocery-name { color: #323a33; font-size: 13px; font-weight: 600; }
 .grocery-detail-hint { margin-left: auto; color: #9aa395; font-size: 14px; opacity: 0; transform: translateX(-3px); transition: opacity .16s ease, transform .16s ease; }
@@ -167,7 +167,7 @@ h1, h2, h3, p { margin-top: 0; }
 .archived-row .data-row-main { opacity: .62; }
 .catalog-row { align-items: flex-start; cursor: pointer; transition: padding .16s ease, background .16s ease; }
 .catalog-row:hover { margin: 0 -9px; padding-right: 9px; padding-left: 9px; border-radius: 8px; background: #f6f7f1; }
-.catalog-thumb { width: 42px; height: 42px; flex: 0 0 42px; border-radius: 10px; }
+.catalog-thumb { width: 70px; height: 70px; flex: 0 0 70px; border-radius: 10px; }
 .catalog-name-line { display: flex; align-items: center; gap: 6px; }
 .catalog-favorite { color: #c48647; font-size: 13px; }.catalog-row-arrow { margin-top: 7px; color: #9aa395; font-size: 17px; transition: transform .16s ease; }.catalog-row:hover .catalog-row-arrow { transform: translateX(3px); }
 .item-breadcrumb { margin: -12px 0 22px; display: flex; gap: 8px; color: #a0a097; font-size: 10px; }.item-breadcrumb a { color: #647660; text-decoration: none; font-weight: 700; }
