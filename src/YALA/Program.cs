@@ -26,6 +26,7 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<CurrentUserContext>();
 builder.Services.AddScoped<ClientState>();
 builder.Services.AddScoped<OfflineQueue>();
+builder.Services.AddScoped<OfflineSnapshotCache>();
 builder.Services.AddHttpClient<ApiClient>(client =>
 {
     client.BaseAddress = new Uri("http://127.0.0.1/");

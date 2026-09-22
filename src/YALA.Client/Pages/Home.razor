@@ -6,6 +6,7 @@
 @inject ClientState State
 @inject NavigationManager Navigation
 @inject OfflineQueue Queue
+@inject OfflineSnapshotCache Cache
 
 <PageTitle>Grocery list · YALA</PageTitle>
 
@@ -49,6 +50,7 @@ else
         try
         {
             session = await Api.GetSessionAsync();
+            if (session is not null) await Cache.SaveSessionAsync(session);
             if (session?.IsAuthenticated == true && session.Households.Current is not null)
             {
                 State.SetHousehold(session.Households.Current);
@@ -57,7 +59,17 @@ else
                 await LoadSuggestionsAsync();
             }
         }
-        catch { State.SetConnectivity(true); }
+        catch
+        {
+            session = await Cache.GetSessionAsync();
+            if (session?.IsAuthenticated == true && session.Households.Current is not null)
+            {
+                State.SetHousehold(session.Households.Current);
+                var cached = await Cache.GetListAsync();
+                if (cached is not null) { rows = cached.Rows; stores = cached.Stores; }
+            }
+            State.SetConnectivity(true, (await Queue.GetAsync()).Count);
+        }
         finally { loading = false; }
     }
 
@@ -66,6 +78,7 @@ else
         var snapshot = await Api.GetListAsync();
         rows = snapshot.Rows;
         stores = snapshot.Stores;
+        await Cache.SaveListAsync(snapshot);
         State.SetConnectivity(false);
     }
 
