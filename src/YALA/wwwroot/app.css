@@ -27,6 +27,7 @@ button { color: inherit; }
 
 .site-shell { min-height: 100vh; background-image: radial-gradient(#5263510b .8px, transparent .8px); background-size: 12px 12px; }
 .site-header { height: 78px; padding: 0 max(28px, calc((100vw - 1240px) / 2)); display: flex; align-items: center; gap: 38px; position: sticky; top: 0; z-index: 20; background: #f7f5eef2; border-bottom: 1px solid #e7e4da; backdrop-filter: blur(16px); }
+.connection-banner { position: sticky; top: 78px; z-index: 19; width: 100%; padding: 8px 16px; text-align: center; background: #fff3cd; color: #654d03; border-bottom: 1px solid #ead79a; font-size: 13px; font-weight: 600; }
 .brand { display: inline-flex; gap: 11px; align-items: center; color: var(--ink); text-decoration: none; font-weight: 700; letter-spacing: .16em; font-size: 16px; }
 .brand-mark { width: 36px; height: 36px; display: block; flex: 0 0 36px; object-fit: cover; border-radius: 10px; transform: rotate(-3deg); box-shadow: 0 4px 10px #244c341c; }
 .household-switcher { position: relative; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 1px 12px; min-width: 175px; padding: 8px 32px 8px 13px; border: 1px solid #e0ded3; background: #fbfaf6; border-radius: 10px; cursor: pointer; }

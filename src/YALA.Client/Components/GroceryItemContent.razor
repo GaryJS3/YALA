@@ -1,0 +1,17 @@
+<div class="grocery-main">
+    <div class="grocery-name-line"><span class="grocery-name">@Item.Name</span>@if (Item.IsFavorite) { <span class="favorite-star">★</span> }@if (Item.CatalogItemId is not null) { <span class="grocery-detail-hint">↗</span> }</div>
+    @if (!string.IsNullOrWhiteSpace(Item.Description)) { <span class="grocery-description">@Item.Description</span> }
+    @if (Item.StorePrices.Count > 0 && !ShowPrices)
+    {
+        <div class="available-store-list"><span>Available at</span>@foreach (var store in Item.StorePrices) { <StoreMark Name="@store.StoreName" ImagePath="@store.ImagePath" /> }</div>
+    }
+    @if (ShowPrices && Item.StorePrices.Count > 0)
+    {
+        <div class="store-price-list">@foreach (var offer in Item.StorePrices.Where(x => CurrentStoreId is null || x.StoreId == CurrentStoreId)) { <span><b>@(offer.Price is decimal price ? price.ToString("C") : "—")</b></span> }</div>
+    }
+</div>
+@code {
+    [Parameter, EditorRequired] public ShoppingListRow Item { get; set; } = default!;
+    [Parameter] public bool ShowPrices { get; set; }
+    [Parameter] public Guid? CurrentStoreId { get; set; }
+}

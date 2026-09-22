@@ -1,0 +1,98 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject ApiClient Api
+@inject ClientState State
+@inject NavigationManager Navigation
+@inject OfflineQueue Queue
+
+<div class="site-shell">
+    <header class="site-header">
+        <a class="brand" href="/" aria-label="YALA grocery list"><img class="brand-mark" src="/yala.png" alt="" aria-hidden="true" width="36" height="36" /><span>YALA</span></a>
+        <div class="household-switcher">
+            @if (households.Count > 1)
+            {
+                <select aria-label="Current household" value="@State.CurrentHouseholdId" @onchange="SwitchHouseholdAsync">
+                    @foreach (var household in households)
+                    {
+                        <option value="@household.Id">@household.Name</option>
+                    }
+                </select>
+            }
+            else if (households.Count == 1)
+            {
+                <span>@households[0].Name</span>
+            }
+        </div>
+        <AuthorizeView>
+            <Authorized>
+                <div class="account-chip">
+                    <span class="account-initial">@Initial(context.User.Identity?.Name)</span>
+                    <span class="account-name">@context.User.Identity?.Name</span>
+                    <form action="/Account/Logout" method="post">
+                        <input type="hidden" name="ReturnUrl" value="/Account/Login" />
+                        <button type="submit" class="quiet-button">Log out</button>
+                    </form>
+                </div>
+            </Authorized>
+        </AuthorizeView>
+    </header>
+
+    @if (State.IsOffline || State.PendingChanges > 0)
+    {
+        <div class="connection-banner" role="status">@(State.IsOffline ? "Offline" : "Syncing")@(State.PendingChanges > 0 ? $" · {State.PendingChanges} changes waiting" : "")</div>
+    }
+
+    <div class="app-frame">
+        <aside class="side-rail">
+            <nav class="primary-nav" aria-label="Main navigation">
+                <NavLink href="/" Match="NavLinkMatch.All"><span class="nav-icon">☷</span>List</NavLink>
+                <NavLink href="/catalog"><span class="nav-icon">▦</span>Catalog</NavLink>
+                <NavLink href="/stores"><span class="nav-icon">⌂</span>Stores</NavLink>
+                <NavLink href="/households"><span class="nav-icon">⌘</span>Households</NavLink>
+                <AuthorizeView Policy="Administrator"><NavLink href="/users"><span class="nav-icon">♙</span>Users</NavLink></AuthorizeView>
+            </nav>
+            <div class="rail-note">Local client · YALA</div>
+        </aside>
+        <main class="main-content"><ErrorBoundary><ChildContent>@Body</ChildContent><ErrorContent Context="error"><div class="notice error" role="alert">Something went wrong. <button class="text-button" @onclick="Recover">Try again</button></div></ErrorContent></ErrorBoundary></main>
+    </div>
+</div>
+
+@code {
+    private List<HouseholdChoice> households = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+    State.Changed += OnStateChanged;
+        if (OperatingSystem.IsBrowser())
+        {
+            await LoadHouseholdsAsync();
+            State.SetConnectivity(false, (await Queue.GetAsync()).Count);
+        }
+    }
+
+    private async Task LoadHouseholdsAsync()
+    {
+        try
+        {
+            var snapshot = await Api.GetHouseholdsAsync();
+            households = snapshot.Items;
+            State.SetHousehold(snapshot.Current);
+        }
+        catch { }
+    }
+
+    private async Task SwitchHouseholdAsync(ChangeEventArgs args)
+    {
+        if (Guid.TryParse(args.Value?.ToString(), out var id))
+        {
+            await Api.SwitchHouseholdAsync(id);
+            await LoadHouseholdsAsync();
+            Navigation.NavigateTo("/", forceLoad: true);
+        }
+    }
+
+    private void OnStateChanged() => InvokeAsync(StateHasChanged);
+    private static string Initial(string? value) => string.IsNullOrWhiteSpace(value) ? "Y" : value[..1].ToUpperInvariant();
+    private void Recover() => Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+    public void Dispose() => State.Changed -= OnStateChanged;
+}

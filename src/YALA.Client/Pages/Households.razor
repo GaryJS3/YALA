@@ -1,0 +1,22 @@
+@page "/households"
+@attribute [Authorize]
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@inject ApiClient Api
+@inject NavigationManager Navigation
+
+<PageTitle>Households · YALA</PageTitle>
+<section class="page-heading"><div><p class="eyebrow">YOUR SHARED SPACES</p><h1>Households</h1><p class="heading-subtitle">Switch the list you are shopping for.</p></div></section>
+<section class="content-card"><div class="form-grid"><div class="form-field"><label>New household</label><input @bind="newName" placeholder="Smith family" /></div><button class="button button-primary" @onclick="CreateAsync">Create household <span>+</span></button></div><div class="data-list">@foreach (var household in households) { <article class="data-row" @key="household.Id"><div class="data-row-main"><strong>@household.Name</strong><small>@(household.Id == current?.Id ? "Current household" : household.IsDefault ? "Default household" : "")</small></div><button class="button button-outline" disabled="@(household.Id == current?.Id)" @onclick="() => SelectAsync(household)">@(household.Id == current?.Id ? "Selected" : "Open")</button>@if (!household.IsDefault) { <button class="text-button" @onclick="() => MakeDefaultAsync(household.Id)">Make default</button> }</article> }</div>@if (households.Count == 0) { <div class="catalog-empty"><h2>No households yet.</h2><p>Ask an administrator to add you to one.</p></div> }@if (current is not null) { <div class="detail-inline-form"><input @bind="rename" placeholder="Rename current household" /><button class="button button-outline" @onclick="RenameAsync">Rename</button><button class="button button-danger" @onclick="ArchiveAsync">Archive</button></div> }</section>
+
+@code {
+    private List<HouseholdChoice> households = [];
+    private HouseholdChoice? current;
+    private string newName = "", rename = "";
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+    private async Task LoadAsync() { var snapshot = await Api.GetHouseholdsAsync(); households = snapshot.Items; current = snapshot.Current; }
+    private async Task SelectAsync(HouseholdChoice household) { await Api.SwitchHouseholdAsync(household.Id); Navigation.NavigateTo("/", forceLoad: true); }
+    private async Task MakeDefaultAsync(Guid id) { await Api.MakeDefaultHouseholdAsync(id); await LoadAsync(); }
+    private async Task CreateAsync() { if (!string.IsNullOrWhiteSpace(newName)) { await Api.CreateHouseholdAsync(newName, households.Count == 0); newName = ""; await LoadAsync(); } }
+    private async Task RenameAsync() { if (!string.IsNullOrWhiteSpace(rename)) { await Api.RenameHouseholdAsync(rename); rename = ""; await LoadAsync(); } }
+    private async Task ArchiveAsync() { await Api.ArchiveHouseholdAsync(); Navigation.NavigateTo("/", forceLoad: true); }
+}

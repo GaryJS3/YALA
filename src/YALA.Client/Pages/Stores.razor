@@ -1,0 +1,19 @@
+@page "/stores"
+@attribute [Authorize]
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@inject ApiClient Api
+@inject NavigationManager Navigation
+
+<PageTitle>Stores · YALA</PageTitle>
+<section class="page-heading"><div><p class="eyebrow">WHERE YOU SHOP</p><h1>Stores</h1><p class="heading-subtitle">Keep store availability and prices close to the list.</p></div></section>
+<section class="content-card"><div class="store-editor"><input @bind="newName" placeholder="New store name" aria-label="New store name" /><button class="button button-primary" @onclick="SaveNewAsync">Add store <span>+</span></button></div><div class="data-list">@foreach (var store in stores) { <article class="data-row" @key="store.Id"><div class="store-row-mark"><StoreMark Name="@store.Name" ImagePath="@store.ImagePath" ShowName="true" /></div><div class="data-row-main"><strong>@store.Name</strong><small>@store.OfferCount offers · @(store.IsActive ? "Active" : "Inactive")</small></div><button class="button button-outline" @onclick="() => OpenStore(store.Id)">Open <span>→</span></button><button class="text-button" @onclick="() => ToggleActiveAsync(store)">@(store.IsActive ? "Deactivate" : "Activate")</button></article> }</div></section>
+
+@code {
+    private List<StoreSummary> stores = [];
+    private string newName = "";
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+    private async Task LoadAsync() => stores = (await Api.GetStoresAsync()).ToList();
+    private async Task SaveNewAsync() { if (!string.IsNullOrWhiteSpace(newName)) { await Api.SaveStoreAsync(null, newName); newName = ""; await LoadAsync(); } }
+    private async Task ToggleActiveAsync(StoreSummary store) { await Api.SetStoreActiveAsync(store.Id, !store.IsActive); await LoadAsync(); }
+    private void OpenStore(Guid id) => Navigation.NavigateTo($"/stores/{id}");
+}

@@ -29,6 +29,21 @@ public sealed class ImageService(
         notifier.Notify(household.HouseholdId);
     }
 
+    public async Task SaveCatalogItemImageUploadAsync(Guid catalogItemId, Stream file, CancellationToken cancellationToken = default)
+    {
+        var household = await RequireHouseholdAsync(cancellationToken);
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var item = await db.CatalogItems.SingleOrDefaultAsync(x => x.Id == catalogItemId && x.HouseholdId == household.HouseholdId, cancellationToken)
+            ?? throw new InvalidOperationException("That item is not in this household.");
+        var oldPath = item.ImagePath;
+        item.ImagePath = await SaveStreamAsync(household.HouseholdId, "items", file, cancellationToken);
+        item.UpdatedAt = DateTimeOffset.UtcNow;
+        try { await db.SaveChangesAsync(cancellationToken); }
+        catch { DeleteStoredImage(item.ImagePath, household.HouseholdId, "items"); throw; }
+        DeleteStoredImage(oldPath, household.HouseholdId, "items");
+        notifier.Notify(household.HouseholdId);
+    }
+
     public async Task<bool> PromoteBestVariantImageToItemIfMissingAsync(Guid catalogItemId, CancellationToken cancellationToken = default)
     {
         var household = await RequireHouseholdAsync(cancellationToken);
@@ -72,6 +87,20 @@ public sealed class ImageService(
         notifier.Notify(household.HouseholdId);
     }
 
+    public async Task SaveVariantImageUploadAsync(Guid variantId, Stream file, CancellationToken cancellationToken = default)
+    {
+        var household = await RequireHouseholdAsync(cancellationToken);
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var variant = await db.ProductVariants.SingleOrDefaultAsync(x => x.Id == variantId && x.HouseholdId == household.HouseholdId, cancellationToken)
+            ?? throw new InvalidOperationException("That product is not in this household.");
+        var oldPath = variant.ImagePath;
+        variant.ImagePath = await SaveStreamAsync(household.HouseholdId, "variants", file, cancellationToken);
+        try { await db.SaveChangesAsync(cancellationToken); }
+        catch { DeleteStoredImage(variant.ImagePath, household.HouseholdId, "variants"); throw; }
+        DeleteStoredImage(oldPath, household.HouseholdId, "variants");
+        notifier.Notify(household.HouseholdId);
+    }
+
     public async Task SaveStoreImageAsync(Guid storeId, IBrowserFile file, CancellationToken cancellationToken = default)
     {
         var household = await RequireHouseholdAsync(cancellationToken);
@@ -80,6 +109,20 @@ public sealed class ImageService(
             ?? throw new InvalidOperationException("That store is not in this household.");
         var oldPath = store.ImagePath;
         store.ImagePath = await SaveAsync(household.HouseholdId, "stores", file, cancellationToken);
+        try { await db.SaveChangesAsync(cancellationToken); }
+        catch { DeleteStoredImage(store.ImagePath, household.HouseholdId, "stores"); throw; }
+        DeleteStoredImage(oldPath, household.HouseholdId, "stores");
+        notifier.Notify(household.HouseholdId);
+    }
+
+    public async Task SaveStoreImageUploadAsync(Guid storeId, Stream file, CancellationToken cancellationToken = default)
+    {
+        var household = await RequireHouseholdAsync(cancellationToken);
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var store = await db.Stores.SingleOrDefaultAsync(x => x.Id == storeId && x.HouseholdId == household.HouseholdId, cancellationToken)
+            ?? throw new InvalidOperationException("That store is not in this household.");
+        var oldPath = store.ImagePath;
+        store.ImagePath = await SaveStreamAsync(household.HouseholdId, "stores", file, cancellationToken);
         try { await db.SaveChangesAsync(cancellationToken); }
         catch { DeleteStoredImage(store.ImagePath, household.HouseholdId, "stores"); throw; }
         DeleteStoredImage(oldPath, household.HouseholdId, "stores");
@@ -127,6 +170,15 @@ public sealed class ImageService(
             using var content = await ReadImageAsync(stream, cancellationToken);
             return await SaveContentAsync(householdId, kind, content, cancellationToken);
         }
+    }
+
+    private async Task<string> SaveStreamAsync(Guid householdId, string kind, Stream file, CancellationToken cancellationToken)
+    {
+        if (file.CanSeek && (file.Length is <= 0 or > MaximumImageBytes))
+            throw new ArgumentException("Images must be 4 MB or smaller.");
+
+        using var content = await ReadImageAsync(file, cancellationToken);
+        return await SaveContentAsync(householdId, kind, content, cancellationToken);
     }
 
     private async Task<string> SaveContentAsync(Guid householdId, string kind, MemoryStream content, CancellationToken cancellationToken)

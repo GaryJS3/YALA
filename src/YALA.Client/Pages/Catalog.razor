@@ -1,0 +1,31 @@
+@page "/catalog"
+@attribute [Authorize]
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@inject ApiClient Api
+@inject NavigationManager Navigation
+
+<PageTitle>Catalog · YALA</PageTitle>
+<section class="page-heading"><div><p class="eyebrow">THE HOUSEHOLD PANTRY LIST</p><h1>Catalog</h1><p class="heading-subtitle">Your regulars live here. Open an item to see its full story.</p></div><a class="button button-primary" href="/catalog/item/new">New item <span>+</span></a></section>
+<section class="content-card">
+    <input class="search-field" @bind="search" @bind:event="oninput" @bind:after="LoadAsync" placeholder="Search names, aliases, product details…" aria-label="Search catalog" />
+    <div class="catalog-filters"><button class="filter-chip @(favoritesOnly ? "selected" : "")" @onclick="ToggleFavorites">★ Favorites</button><button class="filter-chip @(showArchived ? "selected" : "")" @onclick="ToggleArchived">@(showArchived ? "Hide archived" : "Show archived")</button><select class="filter-select" value="@categoryFilter" @onchange="CategoryChanged"><option value="">All categories</option>@foreach (var category in categories) { <option value="@category.Name">@category.Name</option> }</select></div>
+    @if (adHocItems.Count > 0) { <section class="ad-hoc-catalog-section"><div class="section-heading"><div><p class="eyebrow">FROM YOUR LIST</p><h2>Not saved to the catalog</h2></div><span class="item-section-count">@adHocItems.Count</span></div><div class="ad-hoc-catalog-list">@foreach (var item in adHocItems) { <div class="ad-hoc-catalog-row"><div><strong>@item.Name</strong><small>@item.Quantity qty@(string.IsNullOrWhiteSpace(item.StoreName) ? "" : $" · {item.StoreName}")</small></div><div class="ad-hoc-catalog-actions"><button type="button" class="button button-outline" @onclick="() => PromoteAsync(item.ShoppingListItemId)">Save to catalog <span>↗</span></button></div></div> }</div></section> }
+    @if (!FilteredItems().Any()) { <div class="catalog-empty"><span aria-hidden="true">✳</span><h2>No items here yet.</h2><p>Start with something you buy every week.</p><a class="quiet-link" href="/catalog/item/new">Add the first item ↗</a></div> }
+    else { <div class="data-list">@foreach (var item in FilteredItems()) { <article @key="item.Id" class="data-row catalog-row @(item.IsArchived ? "archived-row" : "")" @onclick="() => OpenItem(item.Id)">@if (!string.IsNullOrWhiteSpace(item.ImagePath)) { <ImageLightbox Src="@($"/images/{item.ImagePath}")" Alt="@item.Name" TriggerClass="catalog-thumb" Loading="lazy" /> } else { <div class="catalog-glyph">✳</div> }<div class="data-row-main"><div class="catalog-name-line"><strong>@item.Name</strong>@if (item.IsFavorite) { <span class="catalog-favorite">★</span> }</div><small>@(item.Description ?? item.CategoryName ?? "No details yet") · @(item.StoreCount == 1 ? "1 store" : $"{item.StoreCount} stores")</small></div>@if (item.IsArchived) { <span class="badge">Archived</span> }<span class="catalog-row-arrow">→</span></article> }</div> }
+</section>
+
+@code {
+    private List<CatalogEntry> items = [];
+    private List<AdHocCatalogEntry> adHocItems = [];
+    private List<CategoryChoice> categories = [];
+    private string search = "", categoryFilter = "";
+    private bool favoritesOnly, showArchived;
+    protected override async Task OnInitializedAsync() { await LoadAsync(); }
+    private async Task LoadAsync() { var snapshot = await Api.GetCatalogAsync(search, showArchived); items = snapshot.Items; adHocItems = snapshot.AdHocItems; categories = snapshot.Categories; }
+    private IEnumerable<CatalogEntry> FilteredItems() => items.Where(x => (!favoritesOnly || x.IsFavorite) && (string.IsNullOrEmpty(categoryFilter) || x.CategoryName == categoryFilter));
+    private async Task ToggleFavorites() { favoritesOnly = !favoritesOnly; await LoadAsync(); }
+    private async Task ToggleArchived() { showArchived = !showArchived; await LoadAsync(); }
+    private void CategoryChanged(ChangeEventArgs args) => categoryFilter = args.Value?.ToString() ?? string.Empty;
+    private async Task PromoteAsync(Guid id) { var promoted = await Api.SendPromotionAsync(id); Navigation.NavigateTo($"/catalog/item/{promoted}?edit=true"); }
+    private void OpenItem(Guid id) => Navigation.NavigateTo($"/catalog/item/{id}");
+}

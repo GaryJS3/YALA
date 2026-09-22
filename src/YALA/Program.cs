@@ -7,17 +7,29 @@ using YALA.Components;
 using YALA.Components.Account;
 using YALA.Data;
 using YALA.Services;
+using YALA.Client;
+using YALA.Client.Services;
+using YALA.Api;
 using System.Security.Claims;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
+    .AddInteractiveWebAssemblyComponents()
+    .AddAuthenticationStateSerialization();
 
 builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddScoped<IdentityRedirectManager>();
 builder.Services.AddScoped<AuthenticationStateProvider, IdentityRevalidatingAuthenticationStateProvider>();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<CurrentUserContext>();
+builder.Services.AddScoped<ClientState>();
+builder.Services.AddScoped<OfflineQueue>();
+builder.Services.AddHttpClient<ApiClient>(client =>
+{
+    client.BaseAddress = new Uri("http://127.0.0.1/");
+});
 
 builder.Services.AddAuthentication(options =>
     {
@@ -53,7 +65,9 @@ builder.Services.AddDbContextFactory<ApplicationDbContext>(options =>
     options.UseSqlite(connectionString));
 builder.Services.AddDatabaseDeveloperPageExceptionFilter();
 
-builder.Services.AddScoped<HouseholdService>();
+builder.Services.AddScoped<HouseholdService>(sp => new HouseholdService(
+    sp.GetRequiredService<CurrentUserContext>(),
+    sp.GetRequiredService<IDbContextFactory<ApplicationDbContext>>()));
 builder.Services.AddScoped<ShoppingListService>();
 builder.Services.AddScoped<CatalogService>();
 builder.Services.AddScoped<StoreService>();
@@ -105,6 +119,28 @@ builder.Services.ConfigureApplicationCookie(options =>
         ? CookieSecurePolicy.SameAsRequest
         : CookieSecurePolicy.Always;
     options.SlidingExpiration = true;
+    options.Events.OnRedirectToLogin = context =>
+    {
+        if (context.Request.Path.StartsWithSegments("/api"))
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return Task.CompletedTask;
+        }
+
+        context.Response.Redirect(context.RedirectUri);
+        return Task.CompletedTask;
+    };
+    options.Events.OnRedirectToAccessDenied = context =>
+    {
+        if (context.Request.Path.StartsWithSegments("/api"))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return Task.CompletedTask;
+        }
+
+        context.Response.Redirect(context.RedirectUri);
+        return Task.CompletedTask;
+    };
 });
 
 builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
@@ -132,6 +168,7 @@ app.UseAntiforgery();
 
 app.MapStaticAssets();
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "YALA" })).AllowAnonymous();
+app.MapYalaApi();
 app.MapGet("/blazor.web.js", (IWebHostEnvironment environment) =>
 {
     var path = Path.Combine(environment.WebRootPath, "_framework", "blazor.web.js");
@@ -173,7 +210,8 @@ app.MapGet("/images/households/{householdId:guid}/{kind}/{fileName}", async (
     return Results.File(new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read), contentType, enableRangeProcessing: true);
 }).RequireAuthorization();
 app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
+    .AddInteractiveWebAssemblyRenderMode()
+    .AddAdditionalAssemblies(typeof(YALA.Client._Imports).Assembly);
 
 // Add additional endpoints required by the Identity /Account Razor components.
 app.MapAdditionalIdentityEndpoints();

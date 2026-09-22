@@ -1,0 +1,22 @@
+<article class="grocery-row @(Item.IsChecked ? "is-checked" : "")">
+    <button type="button" class="check-control" aria-label="@(Item.IsChecked ? "Mark " + Item.Name + " not done" : "Mark " + Item.Name + " done")" @onclick="() => OnToggle.InvokeAsync(Item.Id)">@if (Item.IsChecked) { <span>✓</span> }</button>
+    @if (!string.IsNullOrWhiteSpace(Item.ImagePath)) { <ImageLightbox Src="@($"/images/{Item.ImagePath}")" Alt="@Item.Name" TriggerClass="grocery-thumb" Loading="lazy" /> }
+    @if (Item.CatalogItemId is Guid catalogItemId) { <a class="grocery-item-link" href="/catalog/item/@catalogItemId"><GroceryItemContent Item="@Item" ShowPrices="@ShowPrices" CurrentStoreId="@CurrentStoreId" /></a> } else { <div class="grocery-item-link is-static"><GroceryItemContent Item="@Item" ShowPrices="@ShowPrices" CurrentStoreId="@CurrentStoreId" /></div> }
+    <div class="row-end-controls">
+        @if (Item.IsAdHoc && ShowStoreAssignment && Stores.Count > 0) { <select class="assignment-select" aria-label="Store for @Item.Name" value="@(Item.AssignedStoreId?.ToString() ?? "")" @onchange="AssignChangedAsync"><option value="">Store…</option>@foreach (var store in Stores) { <option value="@store.Id">@store.Name</option> }</select> }
+        <div class="quantity-control" aria-label="Quantity"><button type="button" @onclick="() => OnQuantity.InvokeAsync((Item.Id, -1m))">−</button><span>@Item.Quantity.ToString("0.##")</span><button type="button" @onclick="() => OnQuantity.InvokeAsync((Item.Id, 1m))">+</button></div>
+        <button class="remove-item" type="button" aria-label="Remove @Item.Name" @onclick="() => OnRemove.InvokeAsync(Item.Id)">×</button>
+    </div>
+</article>
+@code {
+    [Parameter, EditorRequired] public ShoppingListRow Item { get; set; } = default!;
+    [Parameter] public IReadOnlyList<StoreSummary> Stores { get; set; } = [];
+    [Parameter] public bool ShowPrices { get; set; }
+    [Parameter] public Guid? CurrentStoreId { get; set; }
+    [Parameter] public bool ShowStoreAssignment { get; set; } = true;
+    [Parameter] public EventCallback<Guid> OnToggle { get; set; }
+    [Parameter] public EventCallback<(Guid Id, decimal Delta)> OnQuantity { get; set; }
+    [Parameter] public EventCallback<Guid> OnRemove { get; set; }
+    [Parameter] public EventCallback<(Guid Id, Guid? StoreId)> OnAssign { get; set; }
+    private Task AssignChangedAsync(ChangeEventArgs args) => OnAssign.InvokeAsync((Item.Id, Guid.TryParse(args.Value?.ToString(), out var id) ? id : null));
+}

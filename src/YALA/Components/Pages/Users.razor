@@ -1,5 +1,3 @@
-@page "/users"
-@rendermode InteractiveServer
 @attribute [Authorize(Policy = UserAdministrationService.AdministratorPolicy)]
 @using System.ComponentModel.DataAnnotations
 @inject UserAdministrationService UserAdministration

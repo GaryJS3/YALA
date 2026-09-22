@@ -1,5 +1,3 @@
-using System.Security.Claims;
-using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.EntityFrameworkCore;
 using YALA.Data;
 using YALA.Data.Entities;
@@ -12,17 +10,24 @@ public sealed record HouseholdMemberChoice(string UserId, string DisplayName, st
 public sealed record HouseholdCategory(Guid Id, string Name, int SortOrder);
 
 public sealed class HouseholdService(
-    AuthenticationStateProvider authenticationStateProvider,
+    CurrentUserContext currentUser,
     IDbContextFactory<ApplicationDbContext> dbContextFactory)
 {
+    // Kept for existing service-level tests and callers that construct the
+    // service directly. HTTP requests use the CurrentUserContext overload.
+    public HouseholdService(
+        Microsoft.AspNetCore.Components.Authorization.AuthenticationStateProvider authenticationStateProvider,
+        IDbContextFactory<ApplicationDbContext> dbContextFactory)
+        : this(new CurrentUserContext(new Microsoft.AspNetCore.Http.HttpContextAccessor(), authenticationStateProvider), dbContextFactory)
+    {
+    }
     private Guid? selectedHouseholdId;
     public event Action? CurrentHouseholdChanged;
 
-    public async Task<string?> GetUserIdAsync()
-    {
-        var state = await authenticationStateProvider.GetAuthenticationStateAsync();
-        return state.User.FindFirstValue(ClaimTypes.NameIdentifier);
-    }
+    public Task<string?> GetUserIdAsync() => currentUser.GetUserIdAsync();
+
+    /// <summary>Sets the request/circuit-local household selection after the caller has validated it.</summary>
+    public void SelectHousehold(Guid? householdId) => selectedHouseholdId = householdId;
 
     public async Task<IReadOnlyList<HouseholdChoice>> GetHouseholdsAsync(CancellationToken cancellationToken = default)
     {

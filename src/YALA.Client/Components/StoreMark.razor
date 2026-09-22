@@ -1,0 +1,18 @@
+@if (!ShowName && !string.IsNullOrWhiteSpace(ImagePath))
+{
+    <span class="store-mark store-mark-compact store-mark-logo" aria-label="@Name" title="@Name"><img src="/images/@ImagePath" alt="" loading="lazy" /></span>
+}
+else if (!ShowName)
+{
+    <span class="store-mark store-mark-compact store-mark-fallback" title="@Name">@Name</span>
+}
+else
+{
+    <span class="store-mark store-mark-named" aria-label="@Name" title="@Name"><span class="store-mark-image">@if (!string.IsNullOrWhiteSpace(ImagePath)) { <img src="/images/@ImagePath" alt="" loading="lazy" /> } else { <span>@Initial</span> }</span><span class="store-mark-name">@Name</span></span>
+}
+@code {
+    [Parameter, EditorRequired] public string Name { get; set; } = "";
+    [Parameter] public string? ImagePath { get; set; }
+    [Parameter] public bool ShowName { get; set; }
+    private string Initial => string.IsNullOrWhiteSpace(Name) ? "?" : Name.Trim()[..1].ToUpperInvariant();
+}

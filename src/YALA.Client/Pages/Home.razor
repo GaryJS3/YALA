@@ -1,0 +1,114 @@
+@page "/"
+@attribute [AllowAnonymous]
+@rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
+@implements IDisposable
+@inject ApiClient Api
+@inject ClientState State
+@inject NavigationManager Navigation
+@inject OfflineQueue Queue
+
+<PageTitle>Grocery list · YALA</PageTitle>
+
+@if (loading)
+{
+    <div class="loading-surface"><span class="spinner"></span> Opening your list…</div>
+}
+else if (session is null || !session.IsAuthenticated)
+{
+    <section class="empty-state welcome-empty"><div class="empty-illustration" aria-hidden="true">✳</div><p class="eyebrow">WELCOME TO YALA</p><h1>Make the next grocery run<br />a little easier.</h1><p class="muted-copy">Sign in to open your household list.</p><a class="button button-primary" href="/Account/Login">Sign in <span aria-hidden="true">↗</span></a></section>
+}
+else if (session.Households.Current is null)
+{
+    <section class="empty-state welcome-empty"><div class="empty-illustration" aria-hidden="true">✳</div><p class="eyebrow">WELCOME TO YALA</p><h1>Choose your household.</h1><p class="muted-copy">Create or join a household before adding groceries.</p><a class="button button-primary" href="/households">Open households <span aria-hidden="true">↗</span></a></section>
+}
+else
+{
+    var groups = StoreGroups();
+    <section class="quick-add-panel" aria-label="Quick add an item"><div class="quick-add-title"><span class="plus-disc">+</span><span>Add to the list</span><span class="quick-hint">Type an item, or pick a regular</span></div><div class="quick-entry"><span class="search-mark" aria-hidden="true">⌕</span><input @bind="query" @bind:event="oninput" @bind:after="LoadSuggestionsAsync" @onkeydown="HandleQuickAddKeyAsync" placeholder="Milk, apples, the good coffee…" aria-label="Search or create a grocery item" autocomplete="off" />@if (!string.IsNullOrWhiteSpace(query)) { <button type="button" class="button button-primary add-query-button" @onclick="QuickAddTypedAsync">Add <span>↵</span></button> }</div>
+        @if (suggestions.Count > 0) { <div class="quick-picks"><span class="quick-picks-label">MATCHING ITEMS</span><div class="pick-list">@foreach (var suggestion in suggestions) { <button type="button" class="pick-chip" @onclick="() => AddItemAsync(suggestion.Id)">@if (suggestion.IsFavorite) { <span class="favorite-star">★</span> }@suggestion.Name <span class="pick-plus">+</span></button> }</div></div> }
+    </section>
+    @if (!string.IsNullOrWhiteSpace(query) && !suggestions.Any(x => string.Equals(x.Name, query.Trim(), StringComparison.OrdinalIgnoreCase))) { <button class="create-from-search" type="button" @onclick="QuickAddTypedAsync">Add <strong>“@query.Trim()”</strong> without saving it to the catalog <span>↗</span></button> }
+    <section class="list-board"><div class="list-toolbar"><div class="list-title-group"><h2>On the list</h2><span class="item-total">@ListCountLabel()</span></div><div class="toolbar-actions"><div class="view-switch" role="group" aria-label="List view"><button type="button" class="@(view == ListView.Items ? "selected" : "")" @onclick="() => SetView(ListView.Items)">Items</button><button type="button" class="@(view == ListView.Stores ? "selected" : "")" @onclick="() => SetView(ListView.Stores)">Stores</button></div>@if (rows.Any(x => x.IsChecked)) { <button class="text-button clear-button" type="button" @onclick="ClearCheckedAsync">Clear checked <span>@rows.Count(x => x.IsChecked)</span></button> }</div></div>
+        @if (rows.Count == 0) { <div class="list-empty"><div class="empty-basket" aria-hidden="true"><span>⌑</span></div><h3>Your list is clear.</h3><p>Add a household regular above. It’ll be here next time, too.</p></div> }
+        else if (view == ListView.Items) { <div class="grocery-rows">@foreach (var row in rows.Where(x => !x.IsChecked)) { <GroceryRow @key="row.Id" Item="row" Stores="stores" OnToggle="ToggleAsync" OnQuantity="ChangeQuantityAsync" OnRemove="RemoveAsync" OnAssign="AssignStoreAsync" /> }</div>@if (rows.Any(x => x.IsChecked)) { <div class="checked-section"><div class="checked-heading"><span class="checked-rule"></span><span>IN THE CART</span><span class="checked-rule"></span></div>@foreach (var row in rows.Where(x => x.IsChecked)) { <GroceryRow @key="row.Id" Item="row" Stores="stores" OnToggle="ToggleAsync" OnQuantity="ChangeQuantityAsync" OnRemove="RemoveAsync" OnAssign="AssignStoreAsync" /> }</div> } }
+        else { @foreach (var group in groups) { <div class="store-group"><h3><span class="store-pin">⌖</span>@group.Name <span class="store-group-count">@group.Items.Count</span></h3>@foreach (var entry in group.Items) { <GroceryRow @key="entry.Item.Id" Item="entry.Item" Stores="stores" OnToggle="ToggleAsync" OnQuantity="ChangeQuantityAsync" OnRemove="RemoveAsync" OnAssign="AssignStoreAsync" ShowPrices="true" CurrentStoreId="entry.StoreId" ShowStoreAssignment="true" /> }</div> } }
+    </section>
+}
+
+@code {
+    private SessionSnapshot? session;
+    private List<ShoppingListRow> rows = [];
+    private List<StoreSummary> stores = [];
+    private IReadOnlyList<QuickAddChoice> suggestions = [];
+    private string query = "";
+    private bool loading = true;
+    private ListView view = ListView.Items;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            session = await Api.GetSessionAsync();
+            if (session?.IsAuthenticated == true && session.Households.Current is not null)
+            {
+                State.SetHousehold(session.Households.Current);
+                await FlushQueueAsync();
+                await LoadAsync();
+                await LoadSuggestionsAsync();
+            }
+        }
+        catch { State.SetConnectivity(true); }
+        finally { loading = false; }
+    }
+
+    private async Task LoadAsync()
+    {
+        var snapshot = await Api.GetListAsync();
+        rows = snapshot.Rows;
+        stores = snapshot.Stores;
+        State.SetConnectivity(false);
+    }
+
+    private async Task LoadSuggestionsAsync() => suggestions = await Api.GetSuggestionsAsync(query);
+    private async Task AddItemAsync(Guid id) { await RunQueueableAsync("POST", "api/list/add", new { CatalogItemId = id }, () => Api.AddItemAsync(id)); query = ""; await LoadAsync(); await LoadSuggestionsAsync(); }
+    private async Task QuickAddTypedAsync() { if (!string.IsNullOrWhiteSpace(query)) { await RunQueueableAsync("POST", "api/list/quick-add", new { Name = query.Trim() }, () => Api.QuickAddAsync(query.Trim())); query = ""; await LoadAsync(); await LoadSuggestionsAsync(); } }
+    private async Task HandleQuickAddKeyAsync(KeyboardEventArgs args) { if (args.Key == "Enter") await QuickAddTypedAsync(); }
+    private async Task ToggleAsync(Guid id) { await RunQueueableAsync("POST", "api/list/toggle", new { Id = id }, () => Api.ToggleAsync(id)); await TryLoadAsync(); }
+    private async Task ChangeQuantityAsync((Guid Id, decimal Delta) change) { await RunQueueableAsync("POST", "api/list/quantity", new { Id = change.Id, Delta = change.Delta }, () => Api.ChangeQuantityAsync(change.Id, change.Delta)); await TryLoadAsync(); }
+    private async Task RemoveAsync(Guid id) { await RunQueueableAsync("POST", "api/list/remove", new { Id = id }, () => Api.RemoveAsync(id)); rows.RemoveAll(x => x.Id == id); await TryLoadAsync(); }
+    private async Task AssignStoreAsync((Guid Id, Guid? StoreId) value) { await RunQueueableAsync("POST", "api/list/assign-store", new { Id = value.Id, StoreId = value.StoreId }, () => Api.AssignStoreAsync(value.Id, value.StoreId)); await TryLoadAsync(); }
+    private async Task ClearCheckedAsync() { await RunQueueableAsync("POST", "api/list/clear-checked", null, () => Api.ClearCheckedAsync()); await TryLoadAsync(); await LoadSuggestionsAsync(); }
+
+    private async Task TryLoadAsync()
+    {
+        try { await LoadAsync(); }
+        catch { State.SetConnectivity(true, (await Queue.GetAsync()).Count); }
+    }
+
+    private async Task RunQueueableAsync(string method, string uri, object? body, Func<Task> send)
+    {
+        try { await send(); State.SetConnectivity(false, (await Queue.GetAsync()).Count); }
+        catch
+        {
+            await Queue.EnqueueAsync(new QueuedMutation { Method = method, Uri = uri, BodyJson = body is null ? null : System.Text.Json.JsonSerializer.Serialize(body) });
+            State.SetConnectivity(true, (await Queue.GetAsync()).Count);
+        }
+    }
+
+    private async Task FlushQueueAsync()
+    {
+        foreach (var mutation in await Queue.GetAsync())
+        {
+            try { await Api.SendQueuedAsync(mutation); await Queue.RemoveAsync(mutation.OperationId); }
+            catch { State.SetConnectivity(true, (await Queue.GetAsync()).Count); return; }
+        }
+        State.SetConnectivity(false, 0);
+    }
+    private string ListCountLabel() => rows.Any(x => x.IsChecked) ? $"{rows.Count(x => !x.IsChecked)}/{rows.Count} items remain" : $"{rows.Count} item{(rows.Count == 1 ? "" : "s")}";
+    private IReadOnlyList<StoreListGroup> StoreGroups() => rows.SelectMany(row => row.StorePrices.Count == 0 ? [new StoreListEntry(row, null)] : row.StorePrices.Select(price => new StoreListEntry(row, price.StoreId))).GroupBy(x => x.StoreId).Select(group => new StoreListGroup(group.Key, group.Key is Guid id ? stores.FirstOrDefault(x => x.Id == id)?.Name ?? "Store" : "Any store", group.ToList())).ToList();
+    private void SetView(ListView next) { view = next; Navigation.NavigateTo(next == ListView.Stores ? "/?view=stores" : "/", replace: true); }
+    public void Dispose() { }
+    private sealed record StoreListEntry(ShoppingListRow Item, Guid? StoreId);
+    private sealed record StoreListGroup(Guid? StoreId, string Name, IReadOnlyList<StoreListEntry> Items);
+    private enum ListView { Items, Stores }
+}
