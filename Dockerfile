@@ -1,7 +1,9 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY src/YALA/YALA.csproj src/YALA/
+COPY src/YALA.Client/YALA.Client.csproj src/YALA.Client/
 RUN dotnet restore src/YALA/YALA.csproj
+COPY src/YALA.Client/ src/YALA.Client/
 COPY src/YALA/ src/YALA/
 # Dockhand's direct-host staging can represent binary assets as base64-prefixed
 # text. Normalize only those files while leaving ordinary Git checkouts intact.
