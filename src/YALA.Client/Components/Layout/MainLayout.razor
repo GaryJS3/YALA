@@ -8,21 +8,34 @@
 <div class="site-shell">
     <header class="site-header">
         <a class="brand" href="/" aria-label="YALA grocery list"><img class="brand-mark" src="/yala.png" alt="" aria-hidden="true" width="36" height="36" /><span>YALA</span></a>
-        <div class="household-switcher">
-            @if (households.Count > 1)
-            {
-                <select aria-label="Current household" value="@State.CurrentHouseholdId" @onchange="SwitchHouseholdAsync">
-                    @foreach (var household in households)
-                    {
-                        <option value="@household.Id">@household.Name</option>
-                    }
-                </select>
-            }
-            else if (households.Count == 1)
-            {
-                <span>@households[0].Name</span>
-            }
-        </div>
+        @if (households.Count > 0)
+        {
+            <label class="household-switcher">
+                <span class="switcher-caption">CURRENT LIST</span>
+                @if (households.Count > 1)
+                {
+                    <select aria-label="Current household" value="@(State.CurrentHouseholdId?.ToString() ?? "")" @onchange="SwitchHouseholdAsync">
+                        @foreach (var household in households)
+                        {
+                            <option value="@household.Id">@household.Name</option>
+                        }
+                    </select>
+                    <span class="switcher-chevron" aria-hidden="true">⌄</span>
+                }
+                else
+                {
+                    <span>@households[0].Name</span>
+                }
+            </label>
+        }
+        else
+        {
+            <a class="household-switcher new-household-shortcut" href="/households">
+                <span class="switcher-caption">CURRENT LIST</span>
+                <span>Create your first household</span>
+                <span class="switcher-chevron" aria-hidden="true">↗</span>
+            </a>
+        }
         <AuthorizeView>
             <Authorized>
                 <div class="account-chip">
@@ -75,11 +88,22 @@
     {
         try
         {
-            var snapshot = await Api.GetHouseholdsAsync();
-            households = snapshot.Items;
-            State.SetHousehold(snapshot.Current);
+            var session = await Api.GetSessionAsync();
+            if (session?.IsAuthenticated == true)
+            {
+                households = session.Households.Items;
+                State.SetHousehold(session.Households.Current);
+                return;
+            }
+
+            households = [];
+            State.SetHousehold(null);
         }
-        catch { }
+        catch
+        {
+            households = [];
+            State.SetHousehold(null);
+        }
     }
 
     private async Task SwitchHouseholdAsync(ChangeEventArgs args)
