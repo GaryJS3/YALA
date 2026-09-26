@@ -7,26 +7,214 @@
 
 <PageTitle>@(details?.Name ?? (Id is null ? "New item" : "Item")) · YALA</PageTitle>
 <nav class="item-breadcrumb" aria-label="Breadcrumb"><a href="/catalog">Catalog</a><span>/</span><span>@(details?.Name ?? "New item")</span></nav>
-@if (loading) { <div class="loading-surface"><span class="spinner"></span> Loading item…</div> }
-else if (Id is not null && details is null) { <section class="empty-state"><h1>Item not found</h1><a class="button button-primary" href="/catalog">Back to catalog</a></section> }
-else { <section class="item-hero"><div class="item-hero-copy"><p class="eyebrow">@(Id is null ? "A NEW HOUSEHOLD REGULAR" : details!.CategoryName?.ToUpperInvariant() ?? "UNCATEGORIZED")</p><h1>@(Id is null ? "New item" : details!.Name)</h1><p>@(details?.Description ?? "Add a regular to your catalog.")</p></div></section><section class="content-card item-edit-card"><div class="form-grid"><div class="form-field"><label for="item-name">Friendly name</label><input id="item-name" @bind="name" /></div><div class="form-field"><label for="item-description">Description</label><input id="item-description" @bind="description" /></div><div class="form-field"><label for="item-quantity">Default quantity</label><input id="item-quantity" type="number" min="0.25" step="0.25" @bind="quantity" /></div></div>@if (details is not null) { <div class="item-toggle-row"><label><input type="checkbox" @bind="favorite" /> ★ Favorite</label><label><input type="checkbox" @bind="archived" /> Archive</label><label class="item-photo-action">Item photo <InputFile accept="image/jpeg,image/png,image/webp" OnChange="UploadImageAsync" /></label></div> }<div class="item-edit-actions"><button class="button button-primary" disabled="@saving" @onclick="SaveAsync">@(saving ? "Saving…" : "Save changes") <span>↗</span></button></div>@if (!string.IsNullOrWhiteSpace(message)) { <p class="notice" role="status">@message</p> }</section>
-    @if (details is not null) { <section class="content-card item-section"><div class="section-heading"><div><p class="eyebrow">SEARCH SHORTCUTS</p><h2>Aliases</h2></div></div><div class="alias-chips">@foreach (var itemAlias in details.Aliases) { <span class="alias-chip">@itemAlias.Alias <button type="button" @onclick="() => RemoveAliasAsync(itemAlias.Id)">×</button></span> }</div><div class="detail-inline-form"><input @bind="alias" placeholder="Add an alias" /><button class="button button-outline" @onclick="AddAliasAsync">Add <span>+</span></button></div></section><section class="content-card item-section item-products"><div class="section-heading"><div><p class="eyebrow">BRANDS, SIZES & BARCODES</p><h2>Exact products</h2></div><span class="item-section-count">@details.Variants.Count</span></div>@foreach (var variant in details.Variants) { <article class="product-card"><strong>@variant.Name</strong>@if (!string.IsNullOrWhiteSpace(variant.Brand) || !string.IsNullOrWhiteSpace(variant.Size)) { <small>@variant.Brand @variant.Size</small> }<div class="barcode-list">@foreach (var barcode in variant.Barcodes) { <span class="barcode-chip">@barcode.Barcode</span> }</div><button class="text-button" @onclick="() => RemoveVariantAsync(variant.Id)">Remove product</button></article> }<div class="variant-entry"><h3>Add an exact product</h3><div class="form-grid"><div class="form-field"><label>Product name</label><input @bind="variantName" /></div><div class="form-field"><label>Brand</label><input @bind="variantBrand" /></div><div class="form-field"><label>Size</label><input @bind="variantSize" /></div><div class="form-field"><label>Barcode</label><input @bind="variantBarcode" inputmode="numeric" /></div></div><div class="detail-inline-form"><button class="button button-outline" @onclick="LookupAsync" disabled="@lookingUp">@(lookingUp ? "Looking up…" : "Look up barcode")</button><button class="button button-primary" @onclick="AddVariantAsync">Add product <span>+</span></button></div>@if (lookup is not null) { <p class="notice" role="status">Found: @(lookup.Name ?? "Product")@(string.IsNullOrWhiteSpace(lookup.Brand) ? "" : $" · {lookup.Brand}")</p> }</div></section> }
+
+@if (loading)
+{
+    <div class="loading-surface"><span class="spinner"></span> Loading item…</div>
+}
+else if (Id is not null && details is null)
+{
+    <section class="empty-state"><div class="empty-illustration">?</div><h1>Item not found</h1><p class="muted-copy">It may have been removed or belong to another household.</p><a class="button button-primary" href="/catalog">Back to catalog</a></section>
+}
+else
+{
+    <section class="item-hero">
+        <div class="item-portrait">
+            @if (!string.IsNullOrWhiteSpace(details?.ImagePath))
+            {
+                <ImageLightbox Src="@($"/images/{details.ImagePath}")" Alt="@details.Name" TriggerClass="item-portrait-image" />
+            }
+            else
+            {
+                <span aria-hidden="true">✳</span>
+            }
+            @if (editing && Id is Guid)
+            {
+                <label class="item-photo-action">@(string.IsNullOrWhiteSpace(details?.ImagePath) ? "Add item photo" : "Replace item photo")<InputFile accept="image/jpeg,image/png,image/webp" OnChange="UploadImageAsync" /></label>
+            }
+        </div>
+        <div class="item-hero-copy">
+            <p class="eyebrow">@(Id is null ? "A NEW HOUSEHOLD REGULAR" : details!.CategoryName?.ToUpperInvariant() ?? "UNCATEGORIZED")</p>
+            <h1>@(Id is null ? "New item" : details!.Name)</h1>
+            @if (Id is not null) { <p>@(details!.Description ?? "No description yet.")</p> }
+            <div class="item-status-line">
+                @if (details?.IsFavorite == true) { <span class="item-status favorite">★ Favorite</span> }
+                @if (details?.IsArchived == true) { <span class="item-status archived">Archived</span> }
+                @if (details is not null) { <span class="item-status">@details.DefaultQuantity.ToString("0.##") default qty</span> }
+            </div>
+        </div>
+        <div class="item-hero-actions">
+            @if (!editing) { <button type="button" class="button button-primary" @onclick="BeginEdit">Edit item <span>✎</span></button> }
+            else { <span class="item-editing-state"><span class="item-editing-dot"></span> Editing</span> }
+        </div>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(error)) { <p class="notice error" role="alert">@error</p> }
+    @if (!string.IsNullOrWhiteSpace(message)) { <p class="notice" role="status">@message</p> }
+
+    @if (editing)
+    {
+        <section class="content-card item-edit-card">
+            <div class="section-heading"><div><p class="eyebrow">ITEM DETAILS</p><h2>@(Id is null ? "Build the basics" : "Make it yours")</h2></div></div>
+            <div class="form-grid">
+                <div class="form-field"><label for="item-name">Friendly name</label><input id="item-name" @bind="name" @bind:event="oninput" maxlength="120" placeholder="Whole milk" /></div>
+                <div class="form-field"><label for="item-category">Category</label><select id="item-category" value="@categoryId" @onchange="CategoryChanged"><option value="">No category</option>@foreach (var category in categories) { <option value="@category.Id">@category.Name</option> }</select></div>
+                <div class="form-field"><label for="item-description">Description</label><input id="item-description" @bind="description" @bind:event="oninput" placeholder="1 gallon, whole" /></div>
+                <div class="form-field"><label for="item-quantity">Default quantity</label><input id="item-quantity" type="number" min="0.25" step="0.25" @bind="quantity" /></div>
+            </div>
+            @if (Id is not null)
+            {
+                <div class="item-toggle-row"><label><input type="checkbox" @bind="favorite" /> <span>★</span> Keep in favorites</label><label><input type="checkbox" @bind="archived" /> Archive this item</label></div>
+            }
+            <div class="item-edit-actions">
+                @if (Id is not null) { <button type="button" class="button button-outline" @onclick="CancelEdit">Discard changes</button> }
+                else { <button type="button" class="button button-outline" @onclick="CancelNew">Cancel</button> }
+                <button type="button" class="button button-primary" disabled="@saving" @onclick="SaveAsync">@(saving ? "Saving…" : Id is null ? "Create item" : "Save changes") <span>↗</span></button>
+            </div>
+        </section>
+    }
+
+    @if (details is not null)
+    {
+        <div class="item-page-grid">
+            <section class="content-card item-section">
+                @{ var availableStores = details.Stores.Where(x => x.IsAvailable).ToArray(); }
+                <div class="section-heading"><div><p class="eyebrow">WHERE TO FIND IT</p><h2>Store availability</h2></div><span class="item-section-count">@availableStores.Length store@(availableStores.Length == 1 ? "" : "s")</span></div>
+                @if (editing)
+                {
+                    <p class="item-section-intro">Choose every store that normally carries this item. This does not assign it to a shopping trip.</p>
+                    @if (details.Stores.Count == 0) { <p class="detail-empty">No stores yet. Add one from the Stores tab.</p> }
+                    else
+                    {
+                        <div class="store-check-grid">@foreach (var store in details.Stores) { <label class="store-check @(store.IsAvailable ? "selected" : "") @(store.IsActive ? "" : "inactive")"><input type="checkbox" checked="@store.IsAvailable" @onchange="e => SetStoreAsync(store.Id, Convert.ToBoolean(e.Value))" /><span class="store-check-mark">✓</span><StoreMark Name="@store.Name" ImagePath="@store.ImagePath" ShowName="true" /><small class="store-check-status">@(store.IsActive ? "Active store" : "Inactive store")</small></label> }</div>
+                    }
+                }
+                else if (availableStores.Length == 0) { <p class="detail-empty">Not currently available at any stores.</p> }
+                else { <div class="item-store-summary" aria-label="Stores carrying this item">@foreach (var store in availableStores) { <span class="@(store.IsActive ? "" : "inactive")"><StoreMark Name="@store.Name" ImagePath="@store.ImagePath" ShowName="true" /></span> }</div> }
+            </section>
+
+            <section class="content-card item-section">
+                <div class="section-heading"><div><p class="eyebrow">SEARCH SHORTCUTS</p><h2>Aliases</h2></div><span class="item-section-count">@details.Aliases.Count</span></div>
+                <div class="alias-chips">@foreach (var itemAlias in details.Aliases) { <span class="alias-chip">@itemAlias.Alias @if (editing) { <button type="button" aria-label="Remove alias @itemAlias.Alias" @onclick="() => RemoveAliasAsync(itemAlias.Id)">×</button> }</span> }@if (details.Aliases.Count == 0) { <span class="detail-empty">No aliases yet.</span> }</div>
+                @if (editing) { <div class="detail-inline-form"><input @bind="alias" @bind:event="oninput" placeholder="e.g. Kitty food" aria-label="New item alias" /><button type="button" class="button button-outline" @onclick="AddAliasAsync">Add <span>+</span></button></div> }
+            </section>
+        </div>
+
+        <section class="content-card item-section item-products">
+            <div class="section-heading"><div><p class="eyebrow">BRANDS, SIZES & BARCODES</p><h2>Exact products</h2></div><span class="item-section-count">@details.Variants.Count</span></div>
+            @if (details.Variants.Count == 0) { <p class="detail-empty">Add an exact product when the brand or size matters.</p> }
+            <div class="product-grid">@foreach (var variant in details.Variants) { <article class="product-card">@if (!string.IsNullOrWhiteSpace(variant.ImagePath)) { <ImageLightbox Src="@($"/images/{variant.ImagePath}")" Alt="@variant.Name" TriggerClass="product-card-image" Loading="lazy" /> } else { <div class="product-placeholder">◇</div> }<div class="variant-title"><strong>@variant.Name</strong>@if (variant.IsPreferred) { <span class="badge">Preferred</span> }</div>@if (!string.IsNullOrWhiteSpace(variant.Brand) || !string.IsNullOrWhiteSpace(variant.Size)) { <small>@variant.Brand @variant.Size</small> }<div class="barcode-list">@foreach (var barcode in variant.Barcodes) { <span class="barcode-chip">@barcode.Barcode</span> }</div>@if (editing) { <button type="button" class="text-button remove-variant-action" @onclick="() => RemoveVariantAsync(variant.Id)">Remove product</button> }</article> }</div>
+            @if (editing)
+            {
+                <div class="variant-entry"><h3>Add an exact product</h3><div class="form-grid"><div class="form-field"><label>Product name</label><input @bind="variantName" /></div><div class="form-field"><label>Brand</label><input @bind="variantBrand" /></div><div class="form-field"><label>Size</label><input @bind="variantSize" /></div><div class="form-field"><label>Barcode</label><input @bind="variantBarcode" inputmode="numeric" /></div></div><div class="detail-inline-form"><button type="button" class="button button-outline" @onclick="LookupAsync" disabled="@lookingUp">@(lookingUp ? "Looking up…" : "Look up barcode")</button><button type="button" class="button button-primary" @onclick="AddVariantAsync">Add product <span>+</span></button></div>@if (lookup is not null) { <p class="notice" role="status">Found: @(lookup.Name ?? "Product")@(string.IsNullOrWhiteSpace(lookup.Brand) ? "" : $" · {lookup.Brand}")</p> }</div>
+            }
+        </section>
+    }
 }
 
 @code {
     [Parameter] public Guid? Id { get; set; }
+    [SupplyParameterFromQuery(Name = "edit")] public bool EditOnLoad { get; set; }
+
     private CatalogDetails? details;
-    private string name = "", description = "", alias = "", message = "";
+    private List<CategoryChoice> categories = [];
+    private Guid? categoryId;
+    private string name = "", description = "", alias = "", message = "", error = "";
     private decimal quantity = 1;
-    private bool favorite, archived, loading = true, saving, lookingUp;
+    private bool favorite, archived, loading = true, editing, saving, lookingUp;
     private string variantName = "", variantBrand = "", variantSize = "", variantBarcode = "";
     private ProductLookupResult? lookup;
-    protected override async Task OnParametersSetAsync() { details = await Api.GetCatalogDetailsAsync(Id); if (details is not null) { name = details.Name; description = details.Description ?? ""; quantity = details.DefaultQuantity; favorite = details.IsFavorite; archived = details.IsArchived; } loading = false; }
-    private async Task SaveAsync() { saving = true; try { var savedId = await Api.SaveCatalogItemAsync(new CatalogSaveRequest { Id = Id, Name = name, Description = description, DefaultQuantity = quantity }); if (savedId is Guid newId && Id is null) Navigation.NavigateTo($"/catalog/item/{newId}"); else if (Id is Guid id) { await Api.SetCatalogFavoriteAsync(id, favorite); await Api.SetCatalogArchivedAsync(id, archived); details = await Api.GetCatalogDetailsAsync(id); message = "Saved."; } } finally { saving = false; } }
-    private async Task AddAliasAsync() { if (Id is Guid id && !string.IsNullOrWhiteSpace(alias)) { await Api.AddAliasAsync(id, alias); alias = ""; details = await Api.GetCatalogDetailsAsync(id); } }
-    private async Task RemoveAliasAsync(Guid id) { await Api.RemoveAliasAsync(id); details = await Api.GetCatalogDetailsAsync(Id); }
-    private async Task UploadImageAsync(InputFileChangeEventArgs args) { if (Id is Guid id && args.File is not null) { await Api.UploadItemImageAsync(id, args.File); details = await Api.GetCatalogDetailsAsync(id); message = "Image saved."; } }
-    private async Task LookupAsync() { if (string.IsNullOrWhiteSpace(variantBarcode)) return; lookingUp = true; try { lookup = await Api.LookupProductAsync(variantBarcode); if (lookup is not null) { variantName = lookup.Name ?? variantName; variantBrand = lookup.Brand ?? variantBrand; variantSize = lookup.Size ?? variantSize; } } finally { lookingUp = false; } }
-    private async Task AddVariantAsync() { if (Id is Guid id && !string.IsNullOrWhiteSpace(variantName)) { await Api.SaveVariantAsync(new VariantSaveRequest { ItemId = id, Name = variantName, Brand = variantBrand, Size = variantSize, Barcode = variantBarcode }); variantName = variantBrand = variantSize = variantBarcode = ""; details = await Api.GetCatalogDetailsAsync(id); } }
-    private async Task RemoveVariantAsync(Guid id) { await Api.RemoveVariantAsync(id); details = await Api.GetCatalogDetailsAsync(Id); }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        loading = true;
+        error = message = "";
+        categories = (await Api.GetCatalogFormOptionsAsync()).Categories;
+        if (Id is Guid id)
+        {
+            details = await Api.GetCatalogDetailsAsync(id);
+            if (details is not null)
+            {
+                name = details.Name;
+                description = details.Description ?? "";
+                categoryId = details.CategoryId;
+                quantity = details.DefaultQuantity;
+                favorite = details.IsFavorite;
+                archived = details.IsArchived;
+            }
+            editing = EditOnLoad;
+        }
+        else
+        {
+            details = null;
+            name = description = alias = "";
+            categoryId = null;
+            quantity = 1;
+            favorite = archived = false;
+            editing = true;
+        }
+        loading = false;
+    }
+
+    private void BeginEdit() => editing = true;
+    private void CancelNew() => Navigation.NavigateTo("/catalog");
+    private void CancelEdit() => Navigation.NavigateTo($"/catalog/item/{Id}", replace: true);
+    private void CategoryChanged(ChangeEventArgs args) => categoryId = Guid.TryParse(args.Value?.ToString(), out var id) ? id : null;
+
+    private async Task SaveAsync()
+    {
+        saving = true;
+        error = "";
+        try
+        {
+            var savedId = await Api.SaveCatalogItemAsync(new CatalogSaveRequest { Id = Id, Name = name, Description = description, CategoryId = categoryId, DefaultQuantity = quantity });
+            if (savedId is not Guid id) throw new InvalidOperationException("The item was saved without an id.");
+            await Api.SetCatalogFavoriteAsync(id, favorite);
+            await Api.SetCatalogArchivedAsync(id, archived);
+            Navigation.NavigateTo($"/catalog/item/{id}", replace: true);
+        }
+        catch (Exception ex) { error = ex.Message; }
+        finally { saving = false; }
+    }
+
+    private async Task UploadImageAsync(InputFileChangeEventArgs args)
+    {
+        if (Id is not Guid id || args.File is null) return;
+        try { await Api.UploadItemImageAsync(id, args.File); details = await Api.GetCatalogDetailsAsync(id); message = "Image saved."; }
+        catch (Exception ex) { error = ex.Message; }
+    }
+
+    private async Task SetStoreAsync(Guid storeId, bool available)
+    {
+        if (Id is not Guid id) return;
+        try { await Api.SetItemStoreAvailabilityAsync(id, storeId, available); details = await Api.GetCatalogDetailsAsync(id); }
+        catch (Exception ex) { error = ex.Message; }
+    }
+
+    private async Task AddAliasAsync()
+    {
+        if (Id is not Guid id || string.IsNullOrWhiteSpace(alias)) return;
+        try { await Api.AddAliasAsync(id, alias); alias = ""; details = await Api.GetCatalogDetailsAsync(id); }
+        catch (Exception ex) { error = ex.Message; }
+    }
+
+    private async Task RemoveAliasAsync(Guid aliasId) { try { await Api.RemoveAliasAsync(aliasId); details = await Api.GetCatalogDetailsAsync(Id); } catch (Exception ex) { error = ex.Message; } }
+
+    private async Task LookupAsync()
+    {
+        if (string.IsNullOrWhiteSpace(variantBarcode)) return;
+        lookingUp = true;
+        try { lookup = await Api.LookupProductAsync(variantBarcode); if (lookup is not null) { variantName = lookup.Name ?? variantName; variantBrand = lookup.Brand ?? variantBrand; variantSize = lookup.Size ?? variantSize; } }
+        catch (Exception ex) { error = ex.Message; }
+        finally { lookingUp = false; }
+    }
+
+    private async Task AddVariantAsync()
+    {
+        if (Id is not Guid id || string.IsNullOrWhiteSpace(variantName)) return;
+        try { await Api.SaveVariantAsync(new VariantSaveRequest { ItemId = id, Name = variantName, Brand = variantBrand, Size = variantSize, Barcode = variantBarcode }); variantName = variantBrand = variantSize = variantBarcode = ""; lookup = null; details = await Api.GetCatalogDetailsAsync(id); }
+        catch (Exception ex) { error = ex.Message; }
+    }
+
+    private async Task RemoveVariantAsync(Guid variantId) { try { await Api.RemoveVariantAsync(variantId); details = await Api.GetCatalogDetailsAsync(Id); } catch (Exception ex) { error = ex.Message; } }
 }

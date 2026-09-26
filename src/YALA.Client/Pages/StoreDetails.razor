@@ -5,13 +5,29 @@
 @inject NavigationManager Navigation
 
 <PageTitle>@(details?.Store.Name ?? "Store") · YALA</PageTitle>
-@if (details is null) { <div class="loading-surface"><span class="spinner"></span> Loading store…</div> }
-else { <nav class="item-breadcrumb"><a href="/stores">Stores</a><span>/</span><span>@details.Store.Name</span></nav><section class="page-heading"><div><p class="eyebrow">STORE</p><h1>@details.Store.Name</h1><p class="heading-subtitle">@details.Offers.Count active offers</p></div><button class="button button-outline" @onclick="ToggleActiveAsync">@(details.Store.IsActive ? "Deactivate" : "Activate") store</button></section><section class="content-card"><div class="section-heading"><div><p class="eyebrow">OFFERS</p><h2>Items carried here</h2></div></div>@if (details.Offers.Count == 0) { <p class="detail-empty">No offers yet.</p> } else { <div class="data-list">@foreach (var offer in details.Offers) { <article class="data-row" @key="offer.Id"><div class="data-row-main"><strong>@offer.ItemName</strong><small>@(offer.ProductName ?? "Generic") · @(offer.Aisle ?? "No aisle") · @(offer.LastPrice is decimal p ? p.ToString("C") : "No price")</small></div><button class="text-button" @onclick="() => RemoveOfferAsync(offer.Id)">Remove</button></article> }</div>}</section> }
+@if (loading) { <div class="loading-surface"><span class="spinner"></span> Loading store…</div> }
+else if (details is null) { <section class="empty-state"><div class="empty-illustration">?</div><h1>Store not found</h1><p class="muted-copy">It may have been removed or belong to another household.</p><a class="button button-primary" href="/stores">Back to stores</a></section> }
+else { <nav class="item-breadcrumb"><a href="/stores">Stores</a><span>/</span><span>@details.Store.Name</span></nav><section class="page-heading"><div><p class="eyebrow">STORE</p><h1>@details.Store.Name</h1><p class="heading-subtitle">@details.Offers.Count active offers</p></div><button type="button" class="button button-outline" @onclick="ToggleActiveAsync">@(details.Store.IsActive ? "Deactivate" : "Activate") store</button></section>@if (!string.IsNullOrWhiteSpace(message)) { <p class="notice @(error ? "error" : "")" role="status">@message</p> }<section class="content-card offer-panel"><div class="section-heading"><div><p class="eyebrow">OFFERS</p><h2>Items carried here</h2></div><span class="item-section-count">@details.Offers.Count</span></div>@if (details.Store.IsActive) { <div class="offer-add-form"><div class="form-field"><label for="offer-item">Catalog item</label><select id="offer-item" value="@catalogItemId" @onchange="CatalogItemChanged"><option value="">Choose an item</option>@foreach (var item in details.CatalogItems) { <option value="@item.Id">@item.Name</option> }</select></div><div class="form-field"><label for="offer-aisle">Aisle / section</label><input id="offer-aisle" @bind="aisle" @bind:event="oninput" placeholder="Aisle 4" /></div><div class="form-field"><label for="offer-price">Price (optional)</label><input id="offer-price" @bind="priceText" @bind:event="oninput" inputmode="decimal" placeholder="0.00" /></div><button type="button" class="button button-primary offer-save" disabled="@saving" @onclick="AddOfferAsync">@(saving ? "Adding…" : "Add item") <span>+</span></button></div> } else { <p class="notice">Reactivate this store to add items.</p> }@if (details.Offers.Count == 0) { <p class="detail-empty offer-empty">Nothing tracked here yet. Add a catalog item above.</p> } else { <div class="data-list store-offer-list">@foreach (var offer in details.Offers) { <article class="data-row" @key="offer.Id"><div class="data-row-main"><strong>@offer.ItemName</strong><small>@(offer.ProductName ?? "Generic") · @(offer.Aisle ?? "No aisle") · @(offer.LastPrice is decimal p ? p.ToString("C") : "No price")</small></div><button type="button" class="text-button remove-offer-action" @onclick="() => RemoveOfferAsync(offer.Id)">Remove</button></article> }</div>}</section> }
 
 @code {
     [Parameter] public Guid Id { get; set; }
     private YALA.Client.Models.StoreDetails? details;
-    protected override async Task OnParametersSetAsync() => details = await Api.GetStoreDetailsAsync(Id);
-    private async Task ToggleActiveAsync() { if (details is not null) { await Api.SetStoreActiveAsync(Id, !details.Store.IsActive); details = await Api.GetStoreDetailsAsync(Id); } }
-    private async Task RemoveOfferAsync(Guid id) { await Api.RemoveOfferAsync(id); details = await Api.GetStoreDetailsAsync(Id); }
+    private bool loading = true;
+    private Guid? catalogItemId;
+    private string aisle = "", priceText = "", message = "";
+    private bool saving, error;
+    protected override async Task OnParametersSetAsync() { loading = true; details = await Api.GetStoreDetailsAsync(Id); loading = false; }
+    private void CatalogItemChanged(ChangeEventArgs args) => catalogItemId = Guid.TryParse(args.Value?.ToString(), out var id) ? id : null;
+    private async Task ToggleActiveAsync() { if (details is not null) { try { await Api.SetStoreActiveAsync(Id, !details.Store.IsActive); details = await Api.GetStoreDetailsAsync(Id); } catch (Exception ex) { error = true; message = ex.Message; } } }
+    private async Task AddOfferAsync()
+    {
+        if (catalogItemId is not Guid itemId) { error = true; message = "Choose a catalog item first."; return; }
+        if (!string.IsNullOrWhiteSpace(priceText) && (!decimal.TryParse(priceText, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var parsedPrice) || parsedPrice < 0)) { error = true; message = "Enter a valid non-negative price."; return; }
+        decimal? price = string.IsNullOrWhiteSpace(priceText) ? null : decimal.Parse(priceText, System.Globalization.CultureInfo.InvariantCulture);
+        saving = true;
+        try { await Api.SaveOfferAsync(new StoreOfferSaveRequest { StoreId = Id, CatalogItemId = itemId, Aisle = aisle, Price = price }); aisle = priceText = ""; catalogItemId = null; error = false; message = "Item added."; details = await Api.GetStoreDetailsAsync(Id); }
+        catch (Exception ex) { error = true; message = ex.Message; }
+        finally { saving = false; }
+    }
+    private async Task RemoveOfferAsync(Guid id) { try { await Api.RemoveOfferAsync(id); details = await Api.GetStoreDetailsAsync(Id); } catch (Exception ex) { error = true; message = ex.Message; } }
 }

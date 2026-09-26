@@ -37,6 +37,7 @@ else
 }
 
 @code {
+    [SupplyParameterFromQuery(Name = "view")] public string? ViewQuery { get; set; }
     private SessionSnapshot? session;
     private List<ShoppingListRow> rows = [];
     private List<StoreSummary> stores = [];
@@ -44,6 +45,12 @@ else
     private string query = "";
     private bool loading = true;
     private ListView view = ListView.Items;
+
+    protected override Task OnParametersSetAsync()
+    {
+        view = string.Equals(ViewQuery, "stores", StringComparison.OrdinalIgnoreCase) ? ListView.Stores : ListView.Items;
+        return Task.CompletedTask;
+    }
 
     protected override async Task OnInitializedAsync()
     {

@@ -169,6 +169,17 @@ app.UseAntiforgery();
 
 app.MapStaticAssets();
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "YALA" })).AllowAnonymous();
+app.MapGet("/api/version", () =>
+{
+    var assembly = typeof(YalaApiEndpoints).Assembly;
+    var version = assembly.GetName().Version?.ToString(3) ?? "unknown";
+    var build = assembly.ManifestModule.ModuleVersionId.ToString("N")[..8].ToLowerInvariant();
+    var timestamp = assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyMetadataAttribute), inherit: false)
+        .OfType<System.Reflection.AssemblyMetadataAttribute>()
+        .FirstOrDefault(attribute => attribute.Key == "BuildTimestampUtc")?.Value;
+    var label = $"v{version} · build {build} · {timestamp ?? "unknown build time"}";
+    return Results.Ok(new { Version = version, Build = build, BuildTimestampUtc = timestamp, Label = label });
+}).AllowAnonymous();
 app.MapYalaApi();
 app.MapGet("/blazor.web.js", (IWebHostEnvironment environment) =>
 {

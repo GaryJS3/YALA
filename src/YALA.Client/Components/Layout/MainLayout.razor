@@ -51,7 +51,7 @@
                 <NavLink href="/households"><span class="nav-icon">⌘</span>Households</NavLink>
                 <AuthorizeView Policy="Administrator"><NavLink href="/users"><span class="nav-icon">♙</span>Users</NavLink></AuthorizeView>
             </nav>
-            <div class="rail-note">Local client · YALA</div>
+            <div class="rail-note" title="YALA @BuildLabel"><span class="rail-note-dot"></span> @BuildLabel</div>
         </aside>
         <main class="main-content"><ErrorBoundary><ChildContent>@Body</ChildContent><ErrorContent Context="error"><div class="notice error" role="alert">Something went wrong. <button class="text-button" @onclick="Recover">Try again</button></div></ErrorContent></ErrorBoundary></main>
     </div>
@@ -59,10 +59,11 @@
 
 @code {
     private List<HouseholdChoice> households = [];
+    private static readonly string BuildLabel = CreateBuildLabel();
 
     protected override async Task OnInitializedAsync()
     {
-    State.Changed += OnStateChanged;
+        State.Changed += OnStateChanged;
         if (OperatingSystem.IsBrowser())
         {
             await LoadHouseholdsAsync();
@@ -93,6 +94,16 @@
 
     private void OnStateChanged() => InvokeAsync(StateHasChanged);
     private static string Initial(string? value) => string.IsNullOrWhiteSpace(value) ? "Y" : value[..1].ToUpperInvariant();
+    private static string CreateBuildLabel()
+    {
+        var assembly = typeof(MainLayout).Assembly;
+        var version = assembly.GetName().Version?.ToString(3) ?? "unknown";
+        var build = assembly.ManifestModule.ModuleVersionId.ToString("N")[..8].ToLowerInvariant();
+        var buildTime = assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyMetadataAttribute), inherit: false)
+            .OfType<System.Reflection.AssemblyMetadataAttribute>()
+            .FirstOrDefault(attribute => attribute.Key == "BuildTimestampUtc")?.Value ?? "unknown build time";
+        return $"v{version} · build {build} · {buildTime} UTC";
+    }
     private void Recover() => Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
     public void Dispose() => State.Changed -= OnStateChanged;
 }

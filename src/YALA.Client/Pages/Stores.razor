@@ -6,14 +6,24 @@
 
 <PageTitle>Stores · YALA</PageTitle>
 <section class="page-heading"><div><p class="eyebrow">WHERE YOU SHOP</p><h1>Stores</h1><p class="heading-subtitle">Keep store availability and prices close to the list.</p></div></section>
-<section class="content-card"><div class="store-editor"><input @bind="newName" placeholder="New store name" aria-label="New store name" /><button class="button button-primary" @onclick="SaveNewAsync">Add store <span>+</span></button></div><div class="data-list">@foreach (var store in stores) { <article class="data-row" @key="store.Id"><div class="store-row-mark"><StoreMark Name="@store.Name" ImagePath="@store.ImagePath" ShowName="true" /></div><div class="data-row-main"><strong>@store.Name</strong><small>@store.OfferCount offers · @(store.IsActive ? "Active" : "Inactive")</small></div><button class="button button-outline" @onclick="() => OpenStore(store.Id)">Open <span>→</span></button><button class="text-button" @onclick="() => ToggleActiveAsync(store)">@(store.IsActive ? "Deactivate" : "Activate")</button></article> }</div></section>
+<section class="content-card"><div class="store-editor"><input @bind="newName" @bind:event="oninput" placeholder="New store name" aria-label="New store name" /><button type="button" class="button button-primary" disabled="@saving" @onclick="SaveNewAsync">@(saving ? "Adding…" : "Add store") <span>+</span></button></div>@if (!string.IsNullOrWhiteSpace(error)) { <p class="notice error" role="alert">@error</p> }<div class="data-list">@foreach (var store in stores) { <article class="data-row" @key="store.Id"><div class="store-row-mark"><StoreMark Name="@store.Name" ImagePath="@store.ImagePath" ShowName="true" /></div><div class="data-row-main"><strong>@store.Name</strong><small>@store.OfferCount offers · @(store.IsActive ? "Active" : "Inactive")</small></div><button type="button" class="button button-outline" @onclick="() => OpenStore(store.Id)">Open <span>→</span></button><button type="button" class="text-button" @onclick="() => ToggleActiveAsync(store)">@(store.IsActive ? "Deactivate" : "Activate")</button></article> }</div></section>
 
 @code {
     private List<StoreSummary> stores = [];
     private string newName = "";
+    private string error = "";
+    private bool saving;
     protected override async Task OnInitializedAsync() => await LoadAsync();
     private async Task LoadAsync() => stores = (await Api.GetStoresAsync()).ToList();
-    private async Task SaveNewAsync() { if (!string.IsNullOrWhiteSpace(newName)) { await Api.SaveStoreAsync(null, newName); newName = ""; await LoadAsync(); } }
-    private async Task ToggleActiveAsync(StoreSummary store) { await Api.SetStoreActiveAsync(store.Id, !store.IsActive); await LoadAsync(); }
+    private async Task SaveNewAsync()
+    {
+        if (string.IsNullOrWhiteSpace(newName)) return;
+        saving = true;
+        error = "";
+        try { await Api.SaveStoreAsync(null, newName); newName = ""; await LoadAsync(); }
+        catch (Exception ex) { error = ex.Message; }
+        finally { saving = false; }
+    }
+    private async Task ToggleActiveAsync(StoreSummary store) { try { await Api.SetStoreActiveAsync(store.Id, !store.IsActive); await LoadAsync(); } catch (Exception ex) { error = ex.Message; } }
     private void OpenStore(Guid id) => Navigation.NavigateTo($"/stores/{id}");
 }

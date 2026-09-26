@@ -65,6 +65,9 @@ public sealed class ApiClient(HttpClient http, ClientState state)
     public async Task<CatalogDetails?> GetCatalogDetailsAsync(Guid? id, CancellationToken cancellationToken = default) =>
         await GetAsync<CatalogDetails>(id is null ? "api/catalog/details" : $"api/catalog/details/{id}", cancellationToken);
 
+    public async Task<CatalogFormOptions> GetCatalogFormOptionsAsync(CancellationToken cancellationToken = default) =>
+        await GetAsync<CatalogFormOptions>("api/catalog/details", cancellationToken) ?? new();
+
     public Task<Guid?> SaveCatalogItemAsync(CatalogSaveRequest request, CancellationToken cancellationToken = default) =>
         SendForAsync<Guid?>(HttpMethod.Post, "api/catalog/save", request, cancellationToken);
 
@@ -121,8 +124,11 @@ public sealed class ApiClient(HttpClient http, ClientState state)
     public async Task<StoreDetails?> GetStoreDetailsAsync(Guid id, CancellationToken cancellationToken = default) =>
         await GetAsync<StoreDetails>($"api/stores/{id}", cancellationToken);
 
-    public Task<Guid?> SaveStoreAsync(Guid? id, string name, CancellationToken cancellationToken = default) =>
-        SendForAsync<Guid?>(HttpMethod.Post, "api/stores/save", new { Id = id, Name = name }, cancellationToken);
+    public Task SaveStoreAsync(Guid? id, string name, CancellationToken cancellationToken = default) =>
+        SendAsync(HttpMethod.Post, "api/stores/save", new { Id = id, Name = name }, cancellationToken);
+
+    public Task<BuildInfo?> GetBuildInfoAsync(CancellationToken cancellationToken = default) =>
+        GetAsync<BuildInfo>("api/version", cancellationToken);
 
     public Task SetStoreActiveAsync(Guid id, bool active, CancellationToken cancellationToken = default) =>
         SendAsync(HttpMethod.Post, "api/stores/active", new { Id = id, Active = active }, cancellationToken);
