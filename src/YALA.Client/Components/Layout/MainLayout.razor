@@ -28,7 +28,7 @@
                 }
             </label>
         }
-        else
+        else if (householdsLoaded)
         {
             <a class="household-switcher new-household-shortcut" href="/households">
                 <span class="switcher-caption">CURRENT LIST</span>
@@ -72,6 +72,7 @@
 
 @code {
     private List<HouseholdChoice> households = [];
+    private bool householdsLoaded;
     private static readonly string BuildLabel = CreateBuildLabel();
 
     protected override async Task OnInitializedAsync()
@@ -89,20 +90,24 @@
         try
         {
             var session = await Api.GetSessionAsync();
-            if (session?.IsAuthenticated == true)
+            if (session?.IsAuthenticated != true) { households = []; State.SetHousehold(null); householdsLoaded = true; return; }
+
+            try
+            {
+                var snapshot = await Api.GetHouseholdsAsync();
+                households = snapshot.Items;
+                State.SetHousehold(snapshot.Current);
+            }
+            catch when (session.Households.Items.Count > 0)
             {
                 households = session.Households.Items;
                 State.SetHousehold(session.Households.Current);
-                return;
             }
-
-            households = [];
-            State.SetHousehold(null);
+            householdsLoaded = true;
         }
         catch
         {
-            households = [];
-            State.SetHousehold(null);
+            householdsLoaded = false;
         }
     }
 
