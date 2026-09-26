@@ -54,6 +54,7 @@ public static class YalaApiEndpoints
         secured.MapPost("/catalog/store", SetItemStoreAsync);
         secured.MapGet("/products/lookup/{barcode}", LookupProductAsync);
         secured.MapPost("/images/items/{id:guid}", UploadItemImageAsync);
+        secured.MapPost("/images/stores/{id:guid}", UploadStoreImageAsync);
 
         secured.MapGet("/stores", GetStoresAsync);
         secured.MapGet("/stores/{id:guid}", GetStoreDetailsAsync);
@@ -285,6 +286,15 @@ public static class YalaApiEndpoints
         if (file.Length <= 0 || file.Length > ImageService.MaximumImageBytes) return Results.BadRequest("Images must be 4 MB or smaller.");
         await using var stream = file.OpenReadStream();
         await images.SaveCatalogItemImageUploadAsync(id, stream, cancellationToken);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> UploadStoreImageAsync(Guid id, IFormFile file, HouseholdService households, ImageService images, HttpContext http, CancellationToken cancellationToken)
+    {
+        await SelectHouseholdAsync(http, households, cancellationToken);
+        if (file.Length <= 0 || file.Length > ImageService.MaximumImageBytes) return Results.BadRequest("Images must be 4 MB or smaller.");
+        await using var stream = file.OpenReadStream();
+        await images.SaveStoreImageUploadAsync(id, stream, cancellationToken);
         return Results.NoContent();
     }
 

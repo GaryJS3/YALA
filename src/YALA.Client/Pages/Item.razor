@@ -156,9 +156,40 @@ else
         loading = false;
     }
 
-    private void BeginEdit() => editing = true;
+    private void BeginEdit()
+    {
+        if (details is not null)
+        {
+            name = details.Name;
+            description = details.Description ?? "";
+            categoryId = details.CategoryId;
+            quantity = details.DefaultQuantity;
+            favorite = details.IsFavorite;
+            archived = details.IsArchived;
+        }
+        error = message = "";
+        EditOnLoad = true;
+        editing = true;
+    }
     private void CancelNew() => Navigation.NavigateTo("/catalog");
-    private void CancelEdit() => Navigation.NavigateTo($"/catalog/item/{Id}", replace: true);
+    private void CancelEdit()
+    {
+        if (details is not null)
+        {
+            name = details.Name;
+            description = details.Description ?? "";
+            categoryId = details.CategoryId;
+            quantity = details.DefaultQuantity;
+            favorite = details.IsFavorite;
+            archived = details.IsArchived;
+        }
+        alias = variantName = variantBrand = variantSize = variantBarcode = "";
+        lookup = null;
+        error = message = "";
+        EditOnLoad = false;
+        editing = false;
+        Navigation.NavigateTo($"/catalog/item/{Id}", replace: true);
+    }
     private void CategoryChanged(ChangeEventArgs args) => categoryId = Guid.TryParse(args.Value?.ToString(), out var id) ? id : null;
 
     private async Task SaveAsync()
@@ -171,6 +202,10 @@ else
             if (savedId is not Guid id) throw new InvalidOperationException("The item was saved without an id.");
             await Api.SetCatalogFavoriteAsync(id, favorite);
             await Api.SetCatalogArchivedAsync(id, archived);
+            details = await Api.GetCatalogDetailsAsync(id);
+            EditOnLoad = false;
+            editing = false;
+            message = "Item changes saved.";
             Navigation.NavigateTo($"/catalog/item/{id}", replace: true);
         }
         catch (Exception ex) { error = ex.Message; }

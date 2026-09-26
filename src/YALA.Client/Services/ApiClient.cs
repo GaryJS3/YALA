@@ -112,6 +112,20 @@ public sealed class ApiClient(HttpClient http, ClientState state)
         await EnsureSuccessAsync(response, cancellationToken);
     }
 
+    public async Task UploadStoreImageAsync(Guid id, IBrowserFile file, CancellationToken cancellationToken = default)
+    {
+        var antiforgery = await GetAsync<AntiforgeryResponse>("api/antiforgery", cancellationToken);
+        using var content = new MultipartFormDataContent();
+        await using var stream = file.OpenReadStream(4 * 1024 * 1024, cancellationToken);
+        using var fileContent = new StreamContent(stream);
+        fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+        content.Add(fileContent, "file", file.Name);
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/images/stores/{id}") { Content = content };
+        if (!string.IsNullOrWhiteSpace(antiforgery?.Token)) request.Headers.TryAddWithoutValidation("RequestVerificationToken", antiforgery.Token);
+        using var response = await http.SendAsync(request, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
     public Task<Guid?> SendPromotionAsync(Guid shoppingListItemId, CancellationToken cancellationToken = default) =>
         SendForAsync<Guid?>(HttpMethod.Post, "api/catalog/promote", new { ShoppingListItemId = shoppingListItemId }, cancellationToken);
 
