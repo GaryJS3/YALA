@@ -25,30 +25,35 @@ else if (session.Households.Current is null)
 else
 {
     var groups = StoreGroups();
+    var visibleGroups = FilterStoreGroups(groups);
     <section class="quick-add-panel" aria-label="Quick add an item"><div class="quick-add-title"><span class="plus-disc">+</span><span>Add to the list</span><span class="quick-hint">Type an item, or pick a regular</span></div><div class="quick-entry"><span class="search-mark" aria-hidden="true">⌕</span><input @bind="query" @bind:event="oninput" @bind:after="LoadSuggestionsAsync" @onkeydown="HandleQuickAddKeyAsync" placeholder="Milk, apples, the good coffee…" aria-label="Search or create a grocery item" autocomplete="off" />@if (!string.IsNullOrWhiteSpace(query)) { <button type="button" class="button button-primary add-query-button" @onclick="QuickAddTypedAsync">Add <span>↵</span></button> }</div>
         @if (suggestions.Count > 0) { <div class="quick-picks"><span class="quick-picks-label">MATCHING ITEMS</span><div class="pick-list">@foreach (var suggestion in suggestions) { <button type="button" class="pick-chip" @onclick="() => AddItemAsync(suggestion.Id)">@if (suggestion.IsFavorite) { <span class="favorite-star">★</span> }@suggestion.Name <span class="pick-plus">+</span></button> }</div></div> }
     </section>
     @if (!string.IsNullOrWhiteSpace(query) && !suggestions.Any(x => string.Equals(x.Name, query.Trim(), StringComparison.OrdinalIgnoreCase))) { <button class="create-from-search" type="button" @onclick="QuickAddTypedAsync">Add <strong>“@query.Trim()”</strong> without saving it to the catalog <span>↗</span></button> }
-    <section class="list-board"><div class="list-toolbar"><div class="list-title-group"><h2>On the list</h2><span class="item-total">@ListCountLabel()</span></div><div class="toolbar-actions"><div class="view-switch" role="group" aria-label="List view"><button type="button" class="@(view == ListView.Items ? "selected" : "")" @onclick="() => SetView(ListView.Items)">Items</button><button type="button" class="@(view == ListView.Stores ? "selected" : "")" @onclick="() => SetView(ListView.Stores)">Stores</button></div>@if (rows.Any(x => x.IsChecked)) { <button class="text-button clear-button" type="button" @onclick="ClearCheckedAsync">Clear checked <span>@rows.Count(x => x.IsChecked)</span></button> }</div></div>
+    <section class="list-board"><div class="list-toolbar"><div class="list-title-group"><h2>On the list</h2><span class="item-total">@ListCountLabel()</span></div><div class="toolbar-actions">@if (view == ListView.Stores && groups.Count > 1) { <label class="store-view-filter"><span>Show</span><select value="@selectedStoreFilter" @onchange="StoreFilterChanged" aria-label="Show one store"><option value="@AllStoresFilter">All stores</option>@foreach (var group in groups) { <option value="@StoreFilterKey(group)">@group.Name (@group.Items.Count)</option> }</select></label> }<div class="view-switch" role="group" aria-label="List view"><button type="button" class="@(view == ListView.Items ? "selected" : "")" @onclick="() => SetView(ListView.Items)">Items</button><button type="button" class="@(view == ListView.Stores ? "selected" : "")" @onclick="() => SetView(ListView.Stores)">Stores</button></div>@if (rows.Any(x => x.IsChecked)) { <button class="text-button clear-button" type="button" @onclick="ClearCheckedAsync">Clear checked <span>@rows.Count(x => x.IsChecked)</span></button> }</div></div>
         @if (rows.Count == 0) { <div class="list-empty"><div class="empty-basket" aria-hidden="true"><span>⌑</span></div><h3>Your list is clear.</h3><p>Add a household regular above. It’ll be here next time, too.</p></div> }
         else if (view == ListView.Items) { <div class="grocery-rows">@foreach (var row in rows.Where(x => !x.IsChecked)) { <GroceryRow @key="row.Id" Item="row" Stores="stores" OnToggle="ToggleAsync" OnQuantity="ChangeQuantityAsync" OnRemove="RemoveAsync" OnAssign="AssignStoreAsync" /> }</div>@if (rows.Any(x => x.IsChecked)) { <div class="checked-section"><div class="checked-heading"><span class="checked-rule"></span><span>IN THE CART</span><span class="checked-rule"></span></div>@foreach (var row in rows.Where(x => x.IsChecked)) { <GroceryRow @key="row.Id" Item="row" Stores="stores" OnToggle="ToggleAsync" OnQuantity="ChangeQuantityAsync" OnRemove="RemoveAsync" OnAssign="AssignStoreAsync" /> }</div> } }
-        else { @foreach (var group in groups) { <div class="store-group"><h3><span class="store-pin">⌖</span>@group.Name <span class="store-group-count">@group.Items.Count</span></h3>@foreach (var entry in group.Items) { <GroceryRow @key="entry.Item.Id" Item="entry.Item" Stores="stores" OnToggle="ToggleAsync" OnQuantity="ChangeQuantityAsync" OnRemove="RemoveAsync" OnAssign="AssignStoreAsync" ShowPrices="true" CurrentStoreId="entry.StoreId" ShowStoreAssignment="true" /> }</div> } }
+        else { @foreach (var group in visibleGroups) { <div class="store-group"><h3><span class="store-pin">⌖</span>@group.Name <span class="store-group-count">@group.Items.Count</span></h3>@foreach (var entry in group.Items) { <GroceryRow @key="entry.Item.Id" Item="entry.Item" Stores="stores" OnToggle="ToggleAsync" OnQuantity="ChangeQuantityAsync" OnRemove="RemoveAsync" OnAssign="AssignStoreAsync" ShowPrices="true" CurrentStoreId="entry.StoreId" ShowStoreAssignment="true" /> }</div> } }
     </section>
 }
 
 @code {
     [SupplyParameterFromQuery(Name = "view")] public string? ViewQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "store")] public string? StoreQuery { get; set; }
     private SessionSnapshot? session;
     private List<ShoppingListRow> rows = [];
     private List<StoreSummary> stores = [];
     private IReadOnlyList<QuickAddChoice> suggestions = [];
     private string query = "";
     private bool loading = true;
+    private const string AllStoresFilter = "all";
+    private string selectedStoreFilter = AllStoresFilter;
     private ListView view = ListView.Items;
 
     protected override Task OnParametersSetAsync()
     {
         view = string.Equals(ViewQuery, "stores", StringComparison.OrdinalIgnoreCase) ? ListView.Stores : ListView.Items;
+        ApplyQueryState();
         return Task.CompletedTask;
     }
 
@@ -85,6 +90,7 @@ else
         var snapshot = await Api.GetListAsync();
         rows = snapshot.Rows;
         stores = snapshot.Stores;
+        ApplyQueryState();
         await Cache.SaveListAsync(snapshot);
         State.SetConnectivity(false);
     }
@@ -126,7 +132,32 @@ else
     }
     private string ListCountLabel() => rows.Any(x => x.IsChecked) ? $"{rows.Count(x => !x.IsChecked)}/{rows.Count} items remain" : $"{rows.Count} item{(rows.Count == 1 ? "" : "s")}";
     private IReadOnlyList<StoreListGroup> StoreGroups() => rows.SelectMany(row => row.StorePrices.Count == 0 ? [new StoreListEntry(row, null)] : row.StorePrices.Select(price => new StoreListEntry(row, price.StoreId))).GroupBy(x => x.StoreId).Select(group => new StoreListGroup(group.Key, group.Key is Guid id ? stores.FirstOrDefault(x => x.Id == id)?.Name ?? "Store" : "Any store", group.ToList())).ToList();
-    private void SetView(ListView next) { view = next; Navigation.NavigateTo(next == ListView.Stores ? "/?view=stores" : "/", replace: true); }
+    private IReadOnlyList<StoreListGroup> FilterStoreGroups(IReadOnlyList<StoreListGroup> groups) => selectedStoreFilter == AllStoresFilter ? groups : groups.Where(group => StoreFilterKey(group) == selectedStoreFilter).ToArray();
+    private void ApplyQueryState()
+    {
+        selectedStoreFilter = AllStoresFilter;
+        if (view != ListView.Stores || string.IsNullOrWhiteSpace(StoreQuery)) return;
+        var matchingGroup = StoreGroups().FirstOrDefault(group => string.Equals(group.Name, StoreQuery, StringComparison.OrdinalIgnoreCase) || string.Equals(StoreFilterKey(group), StoreQuery, StringComparison.OrdinalIgnoreCase));
+        if (matchingGroup is not null) selectedStoreFilter = StoreFilterKey(matchingGroup);
+    }
+    private void SetView(ListView next)
+    {
+        view = next;
+        if (view == ListView.Items) selectedStoreFilter = AllStoresFilter;
+        UpdateViewUrl();
+    }
+    private void StoreFilterChanged(ChangeEventArgs args) { selectedStoreFilter = args.Value?.ToString() ?? AllStoresFilter; UpdateViewUrl(); }
+    private void UpdateViewUrl()
+    {
+        var selectedGroup = StoreGroups().FirstOrDefault(group => StoreFilterKey(group) == selectedStoreFilter);
+        var uri = Navigation.GetUriWithQueryParameters(new Dictionary<string, object?>
+        {
+            ["view"] = view == ListView.Stores ? "stores" : null,
+            ["store"] = view == ListView.Stores && selectedStoreFilter != AllStoresFilter ? selectedGroup?.Name : null
+        });
+        Navigation.NavigateTo(uri, replace: true);
+    }
+    private static string StoreFilterKey(StoreListGroup group) => group.StoreId?.ToString() ?? "any";
     public void Dispose() { }
     private sealed record StoreListEntry(ShoppingListRow Item, Guid? StoreId);
     private sealed record StoreListGroup(Guid? StoreId, string Name, IReadOnlyList<StoreListEntry> Items);
