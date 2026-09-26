@@ -18,7 +18,7 @@ else
     <nav class="item-breadcrumb"><a href="/stores">Stores</a><span>/</span><span>@details.Store.Name</span></nav>
     <section class="item-hero store-hero">
         <div class="item-portrait store-portrait">
-            @if (!string.IsNullOrWhiteSpace(details.Store.ImagePath)) { <img src="/images/@details.Store.ImagePath" alt="" /> } else { <span aria-hidden="true">⌂</span> }
+            @if (!string.IsNullOrWhiteSpace(details.Store.ImagePath)) { <ImageLightbox Src="@($"/images/{details.Store.ImagePath}")" Alt="@details.Store.Name" TriggerClass="item-portrait-image" /> } else { <span aria-hidden="true">⌂</span> }
             @if (editing) { <label class="item-photo-action">@(string.IsNullOrWhiteSpace(details.Store.ImagePath) ? "Add logo or photo" : "Change logo or photo")<InputFile accept="image/jpeg,image/png,image/webp" OnChange="UploadStoreImageAsync" /></label> }
         </div>
         <div class="item-hero-copy"><p class="eyebrow">YOUR HOUSEHOLD STORE</p><h1>@details.Store.Name</h1><p>@details.Offers.Count item@(details.Offers.Count == 1 ? "" : "s") tracked at this store.</p><div class="item-status-line"><span class="item-status @(details.Store.IsActive ? "" : "archived")">@(details.Store.IsActive ? "Active store" : "Paused store")</span></div></div>
