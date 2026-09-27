@@ -22,7 +22,7 @@ else
             @if (editing) { <label class="item-photo-action">@(string.IsNullOrWhiteSpace(details.Store.ImagePath) ? "Add logo or photo" : "Change logo or photo")<InputFile accept="image/jpeg,image/png,image/webp" OnChange="UploadStoreImageAsync" /></label> }
         </div>
         <div class="item-hero-copy"><p class="eyebrow">YOUR HOUSEHOLD STORE</p><h1>@details.Store.Name</h1><p>@details.Offers.Count item@(details.Offers.Count == 1 ? "" : "s") tracked at this store.</p><div class="item-status-line"><span class="item-status @(details.Store.IsActive ? "" : "archived")">@(details.Store.IsActive ? "Active store" : "Paused store")</span></div></div>
-        <div class="item-hero-actions">@if (!editing) { <button type="button" class="button button-primary" @onclick="BeginEdit">Edit store <span>✎</span></button> } else { <span class="item-editing-state"><span class="item-editing-dot"></span> Editing</span> }</div>
+        <div class="item-hero-actions">@if (!editing) { <div class="store-detail-actions"><button type="button" class="button button-primary" @onclick="BeginEdit">Edit store <span>✎</span></button><button type="button" class="button button-outline" disabled="@storeActionSaving" @onclick="ToggleActiveAsync">@(storeActionSaving ? "Saving…" : details.Store.IsActive ? "Deactivate store" : "Activate store")</button></div> } else { <span class="item-editing-state"><span class="item-editing-dot"></span> Editing</span> }</div>
     </section>
 
     @if (!string.IsNullOrWhiteSpace(message)) { <p class="notice @(error ? "error" : "")" role="status">@message</p> }
@@ -37,7 +37,7 @@ else
     }
 
     <section class="content-card offer-panel">
-        <div class="section-heading"><div><p class="eyebrow">WHAT YOU FIND HERE</p><h2>Items at this store</h2></div><span class="item-section-count">@details.Offers.Count</span></div>
+        <div class="section-heading"><div><p class="eyebrow">WHAT YOU FIND HERE</p><h2>Items at this store</h2></div><div class="offer-panel-actions"><span class="item-section-count">@details.Offers.Count</span>@if (details.Offers.Count > 0) { @if (editingOffers) { <button type="button" class="button button-outline" @onclick="CancelOffersEdit">Cancel</button><button type="button" class="button button-primary" @onclick="FinishOffersEdit">Done</button> } else { <button type="button" class="button button-outline" @onclick="BeginOffersEdit">Edit items <span>✎</span></button> } }</div></div>
         @if (details.Store.IsActive)
         {
             <div class="offer-add-form"><div class="form-field"><label for="offer-item">Catalog item</label><select id="offer-item" value="@catalogItemId" @onchange="CatalogItemChanged"><option value="">Choose an item</option>@foreach (var item in details.CatalogItems) { <option value="@item.Id">@item.Name</option> }</select></div><div class="form-field"><label for="offer-aisle">Aisle / section</label><input id="offer-aisle" @bind="aisle" @bind:event="oninput" placeholder="Pets, aisle 4…" /></div><div class="form-field"><label for="offer-price">Price (optional)</label><input id="offer-price" @bind="priceText" @bind:event="oninput" inputmode="decimal" placeholder="0.00" /></div><button type="button" class="button button-primary offer-save" disabled="@offerSaving" @onclick="AddOfferAsync">@(offerSaving ? "Adding…" : "Add item") <span>+</span></button></div>
@@ -46,7 +46,7 @@ else
         @if (details.Offers.Count == 0) { <p class="muted-copy offer-empty">Nothing tracked here yet. Add a catalog item above; store-specific prices are optional.</p> }
         else
         {
-            <div class="data-list store-offer-list">@foreach (var offer in details.Offers) { <article class="data-row" @key="offer.Id"><div class="data-row-main"><strong>@offer.ItemName</strong><small>@(offer.ProductName ?? "Any product") · @(offer.Aisle ?? "Aisle not noted") · @(offer.LastPrice is decimal p ? p.ToString("C") : "No price yet")</small></div><span class="offer-last">@(offer.LastPrice is decimal last ? last.ToString("C") : "—")</span><button type="button" class="text-button remove-offer-action" @onclick="() => RemoveOfferAsync(offer.Id)">Remove</button></article> }</div>
+            <div class="data-list store-offer-list">@foreach (var offer in details.Offers) { var draft = GetOfferDraft(offer); <article class="data-row @(editingOffers ? "store-offer-edit-row" : "")" @key="offer.Id"><div class="data-row-main"><strong>@offer.ItemName</strong><small>@(offer.ProductName ?? "Any product")@(editingOffers ? "" : $" · {(offer.Aisle ?? "Aisle not noted")} · {(offer.LastPrice is decimal p ? p.ToString("C") : "No price yet")}")</small></div>@if (editingOffers) { <div class="offer-edit-field form-field"><label for="offer-location-@offer.Id">Location</label><input id="offer-location-@offer.Id" @bind="draft.Aisle" @bind:event="oninput" placeholder="Aisle or section" /></div><div class="offer-edit-field form-field"><label for="offer-price-@offer.Id">Price</label><input id="offer-price-@offer.Id" @bind="draft.PriceText" @bind:event="oninput" inputmode="decimal" placeholder="0.00" /></div><button type="button" class="button button-primary offer-row-save" disabled="@(offerSavingId == offer.Id)" @onclick="() => SaveOfferEditAsync(offer)">@(offerSavingId == offer.Id ? "Saving…" : "Save")</button> } else { <span class="offer-last">@(offer.LastPrice is decimal last ? last.ToString("C") : "—")</span><button type="button" class="text-button remove-offer-action" @onclick="() => RemoveOfferAsync(offer.Id)">Remove</button> }</article> }</div>
         }
     </section>
 }
@@ -55,10 +55,12 @@ else
     [Parameter] public Guid Id { get; set; }
 
     private YALA.Client.Models.StoreDetails? details;
-    private bool loading = true, editing, saving, offerSaving, error;
+    private bool loading = true, editing, editingOffers, saving, offerSaving, storeActionSaving, error;
     private string editName = "", aisle = "", priceText = "", message = "";
     private bool editActive;
     private Guid? catalogItemId;
+    private Guid? offerSavingId;
+    private readonly Dictionary<Guid, OfferEditModel> offerEdits = [];
 
     protected override async Task OnParametersSetAsync() => await LoadAsync();
 
@@ -96,6 +98,22 @@ else
         message = "";
     }
 
+    private async Task ToggleActiveAsync()
+    {
+        if (details is null) return;
+        storeActionSaving = true;
+        error = false;
+        try
+        {
+            var nextState = !details.Store.IsActive;
+            await Api.SetStoreActiveAsync(Id, nextState);
+            await LoadAsync();
+            message = nextState ? "Store activated." : "Store deactivated.";
+        }
+        catch (Exception ex) { error = true; message = ex.Message; }
+        finally { storeActionSaving = false; }
+    }
+
     private async Task SaveAsync()
     {
         if (string.IsNullOrWhiteSpace(editName)) { error = true; message = "Enter a store name."; return; }
@@ -122,6 +140,73 @@ else
 
     private void CatalogItemChanged(ChangeEventArgs args) => catalogItemId = Guid.TryParse(args.Value?.ToString(), out var id) ? id : null;
 
+    private void BeginOffersEdit()
+    {
+        if (details is null) return;
+        offerEdits.Clear();
+        foreach (var offer in details.Offers)
+        {
+            offerEdits[offer.Id] = CreateOfferDraft(offer);
+        }
+        editingOffers = true;
+        error = false;
+        message = "";
+    }
+
+    private void CancelOffersEdit()
+    {
+        offerEdits.Clear();
+        editingOffers = false;
+        offerSavingId = null;
+        error = false;
+        message = "";
+    }
+
+    private void FinishOffersEdit()
+    {
+        offerEdits.Clear();
+        editingOffers = false;
+        message = "";
+    }
+
+    private OfferEditModel GetOfferDraft(StoreOfferSummary offer) =>
+        offerEdits.TryGetValue(offer.Id, out var draft) ? draft : CreateOfferDraft(offer);
+
+    private static OfferEditModel CreateOfferDraft(StoreOfferSummary offer) => new()
+    {
+        Aisle = offer.Aisle ?? "",
+        PriceText = offer.LastPrice?.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) ?? ""
+    };
+
+    private async Task SaveOfferEditAsync(StoreOfferSummary offer)
+    {
+        var draft = GetOfferDraft(offer);
+        decimal? price = null;
+        if (!string.IsNullOrWhiteSpace(draft.PriceText))
+        {
+            if (!decimal.TryParse(draft.PriceText, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out var parsedPrice) || parsedPrice < 0)
+            {
+                error = true;
+                message = $"Enter a valid price for {offer.ItemName}.";
+                return;
+            }
+            price = parsedPrice;
+        }
+
+        offerSavingId = offer.Id;
+        error = false;
+        try
+        {
+            await Api.UpdateOfferAsync(new StoreOfferUpdateRequest { OfferId = offer.Id, Aisle = draft.Aisle, Price = price });
+            await LoadAsync();
+            var updated = details?.Offers.FirstOrDefault(x => x.Id == offer.Id);
+            if (updated is not null) offerEdits[offer.Id] = CreateOfferDraft(updated);
+            message = $"{offer.ItemName} updated.";
+        }
+        catch (Exception ex) { error = true; message = ex.Message; }
+        finally { offerSavingId = null; }
+    }
+
     private async Task AddOfferAsync()
     {
         if (catalogItemId is not Guid itemId) { error = true; message = "Choose a catalog item first."; return; }
@@ -141,5 +226,11 @@ else
     {
         try { await Api.RemoveOfferAsync(offerId); await LoadAsync(); error = false; message = "Item removed."; }
         catch (Exception ex) { error = true; message = ex.Message; }
+    }
+
+    private sealed class OfferEditModel
+    {
+        public string Aisle { get; set; } = "";
+        public string PriceText { get; set; } = "";
     }
 }

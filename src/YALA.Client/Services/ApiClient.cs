@@ -159,6 +159,9 @@ public sealed class ApiClient(HttpClient http, ClientState state)
     public Task SaveOfferAsync(StoreOfferSaveRequest request, CancellationToken cancellationToken = default) =>
         SendAsync(HttpMethod.Post, "api/stores/offers", request, cancellationToken);
 
+    public Task UpdateOfferAsync(StoreOfferUpdateRequest request, CancellationToken cancellationToken = default) =>
+        SendAsync(HttpMethod.Post, "api/stores/offers/update", request, cancellationToken);
+
     public async Task<HouseholdSnapshot> GetHouseholdsAsync(CancellationToken cancellationToken = default) =>
         await GetAsync<HouseholdSnapshot>("api/households", cancellationToken) ?? new();
 

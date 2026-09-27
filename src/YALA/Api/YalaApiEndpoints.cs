@@ -64,6 +64,7 @@ public static class YalaApiEndpoints
         secured.MapPost("/stores/preferred", SetPreferredOfferAsync);
         secured.MapDelete("/stores/offers/{id:guid}", RemoveOfferAsync);
         secured.MapPost("/stores/offers", SaveOfferAsync);
+        secured.MapPost("/stores/offers/update", UpdateOfferAsync);
         secured.MapGet("/users", GetUsersAsync);
         secured.MapPost("/users", CreateUserAsync);
         secured.MapPost("/users/reset-password", ResetPasswordAsync);
@@ -343,6 +344,11 @@ public static class YalaApiEndpoints
         await SelectHouseholdAsync(http, households, cancellationToken); await stores.SaveOfferAsync(command.StoreId, command.CatalogItemId, command.Aisle, command.Price, command.ProductVariantId, cancellationToken); return Results.NoContent();
     }
 
+    private static async Task<IResult> UpdateOfferAsync(StoreOfferUpdateCommand command, HouseholdService households, StoreService stores, HttpContext http, CancellationToken cancellationToken)
+    {
+        await SelectHouseholdAsync(http, households, cancellationToken); await stores.UpdateOfferAsync(command.OfferId, command.Aisle, command.Price, cancellationToken); return Results.NoContent();
+    }
+
     private static async Task<IResult> GetUsersAsync(HttpContext http, IDbContextFactory<ApplicationDbContext> dbFactory, CancellationToken cancellationToken)
     {
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
@@ -426,6 +432,7 @@ public static class YalaApiEndpoints
     private sealed record StoreMoveCommand(Guid Id, int Direction);
     private sealed record PreferredCommand(Guid OfferId, bool Preferred);
     private sealed record StoreOfferCommand(Guid StoreId, Guid CatalogItemId, string? Aisle, decimal? Price, Guid? ProductVariantId);
+    private sealed record StoreOfferUpdateCommand(Guid OfferId, string? Aisle, decimal? Price);
     private sealed record UserCreateCommand(string DisplayName, string UserName, string Password, Guid? HouseholdId);
     private sealed record UserPasswordCommand(string UserId, string Password);
 }

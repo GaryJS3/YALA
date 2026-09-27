@@ -150,6 +150,26 @@ public sealed class ShoppingListIsolationTests
     }
 
     [Fact]
+    public async Task ExistingStoreOfferCanUpdateItsLocationAndPrice()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+        var (_, item) = await fixture.SeedSingleHouseholdAsync();
+        var service = fixture.CreateStoreService(fixture.CreateHouseholdService("gary"));
+        await service.SaveStoreAsync(null, "Aldi");
+        var store = Assert.Single(await service.GetStoresAsync());
+
+        await service.SaveOfferAsync(store.Id, item.Id, "Aisle 1", 3.50m);
+        var offer = Assert.Single(await service.GetOffersAsync(store.Id));
+
+        await service.UpdateOfferAsync(offer.Id, "End cap", 4.25m);
+
+        var updated = Assert.Single(await service.GetOffersAsync(store.Id));
+        Assert.Equal("End cap", updated.Aisle);
+        Assert.Equal(4.25m, updated.LastPrice);
+        Assert.Equal(2, updated.PriceHistory.Count);
+    }
+
+    [Fact]
     public async Task AnotherHouseholdsStoreCannotBeAttachedToCurrentHouseholdsItem()
     {
         await using var fixture = await TestFixture.CreateAsync();

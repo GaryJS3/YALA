@@ -183,6 +183,28 @@ public sealed class StoreService(IDbContextFactory<ApplicationDbContext> dbConte
         notifier.Notify(household.HouseholdId);
     }
 
+    public async Task UpdateOfferAsync(Guid offerId, string? aisle, decimal? price, CancellationToken cancellationToken = default)
+    {
+        var household = await RequireHouseholdAsync(cancellationToken);
+        if (price < 0) throw new ArgumentOutOfRangeException(nameof(price), "Price cannot be negative.");
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var offer = await db.StoreOffers
+            .Include(x => x.Prices)
+            .SingleOrDefaultAsync(x => x.Id == offerId && x.HouseholdId == household.HouseholdId && x.IsAvailable, cancellationToken)
+            ?? throw new InvalidOperationException("That store offer is not in this household.");
+
+        offer.Aisle = string.IsNullOrWhiteSpace(aisle) ? null : aisle.Trim();
+        offer.UpdatedAt = DateTimeOffset.UtcNow;
+        var latestPrice = offer.Prices.OrderByDescending(x => x.RecordedAt).FirstOrDefault()?.Price;
+        if (price is decimal recordedPrice && latestPrice != recordedPrice)
+        {
+            db.PriceHistory.Add(new PriceHistory { HouseholdId = household.HouseholdId, StoreOfferId = offer.Id, Price = recordedPrice, Source = PriceSource.Manual });
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+        notifier.Notify(household.HouseholdId);
+    }
+
     private async Task<CurrentHouseholdContext> RequireHouseholdAsync(CancellationToken cancellationToken) =>
         await householdService.GetCurrentAsync(cancellationToken)
         ?? throw new InvalidOperationException("Choose a household first.");
