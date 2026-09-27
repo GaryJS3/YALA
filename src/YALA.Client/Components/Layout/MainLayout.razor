@@ -85,6 +85,15 @@
         }
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && OperatingSystem.IsBrowser() && !householdsLoaded)
+        {
+            await LoadHouseholdsAsync();
+            StateHasChanged();
+        }
+    }
+
     private async Task LoadHouseholdsAsync()
     {
         try
