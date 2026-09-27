@@ -116,6 +116,7 @@
         if (Guid.TryParse(args.Value?.ToString(), out var id))
         {
             await Api.SwitchHouseholdAsync(id);
+            State.SetHousehold(households.FirstOrDefault(x => x.Id == id));
             await LoadHouseholdsAsync();
             Navigation.NavigateTo("/", forceLoad: true);
         }

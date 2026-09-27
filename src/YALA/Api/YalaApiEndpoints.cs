@@ -11,6 +11,8 @@ namespace YALA.Api;
 
 public static class YalaApiEndpoints
 {
+    private const string HouseholdCookieName = "YalaHousehold";
+
     public static IEndpointRouteBuilder MapYalaApi(this IEndpointRouteBuilder endpoints)
     {
         var api = endpoints.MapGroup("/api");
@@ -88,11 +90,16 @@ public static class YalaApiEndpoints
 
         var userId = http.User.FindFirstValue(ClaimTypes.NameIdentifier);
         var user = userId is null ? null : await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.Id == userId, cancellationToken);
+        SelectRequestedHousehold(http, households);
         var snapshot = await GetHouseholdSnapshotAsync(households, cancellationToken);
         return Results.Ok(new { IsAuthenticated = true, RequiresSetup = requiresSetup, UserName = user?.UserName, IsAdministrator = user?.IsAdministrator == true, Households = snapshot });
     }
 
-    private static async Task<IResult> GetHouseholdsAsync(HouseholdService households, CancellationToken cancellationToken) => Results.Ok(await GetHouseholdSnapshotAsync(households, cancellationToken));
+    private static async Task<IResult> GetHouseholdsAsync(HttpContext http, HouseholdService households, CancellationToken cancellationToken)
+    {
+        SelectRequestedHousehold(http, households);
+        return Results.Ok(await GetHouseholdSnapshotAsync(households, cancellationToken));
+    }
 
     private static async Task<object> GetHouseholdSnapshotAsync(HouseholdService households, CancellationToken cancellationToken)
     {
@@ -103,9 +110,20 @@ public static class YalaApiEndpoints
         return new { Items = items, Current = selected, Categories = categories };
     }
 
-    private static async Task<IResult> SwitchHouseholdAsync(HouseholdCommand command, HouseholdService households, CancellationToken cancellationToken)
+    private static async Task<IResult> SwitchHouseholdAsync(HttpContext http, HouseholdCommand command, HouseholdService households, CancellationToken cancellationToken)
     {
         var allowed = await households.SwitchAsync(command.HouseholdId, cancellationToken);
+        if (allowed)
+        {
+            http.Response.Cookies.Append(HouseholdCookieName, command.HouseholdId.ToString("D"), new CookieOptions
+            {
+                HttpOnly = true,
+                IsEssential = true,
+                SameSite = SameSiteMode.Lax,
+                Secure = http.Request.IsHttps
+            });
+        }
+
         return allowed ? Results.NoContent() : Results.NotFound();
     }
 
@@ -404,8 +422,17 @@ public static class YalaApiEndpoints
 
     private static async Task SelectHouseholdAsync(HttpContext http, HouseholdService households, CancellationToken cancellationToken)
     {
-        if (http.Request.Headers.TryGetValue("X-Yala-Household", out var raw) && Guid.TryParse(raw, out var selected)) households.SelectHousehold(selected);
+        SelectRequestedHousehold(http, households);
         if (await households.GetCurrentAsync(cancellationToken) is null) throw new InvalidOperationException("Choose a household first.");
+    }
+
+    private static void SelectRequestedHousehold(HttpContext http, HouseholdService households)
+    {
+        var raw = http.Request.Headers.TryGetValue("X-Yala-Household", out var headerValue)
+            ? headerValue.ToString()
+            : http.Request.Cookies[HouseholdCookieName];
+
+        if (Guid.TryParse(raw, out var selected)) households.SelectHousehold(selected);
     }
 
     private sealed record HouseholdCommand(Guid HouseholdId);
