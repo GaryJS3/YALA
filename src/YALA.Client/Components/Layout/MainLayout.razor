@@ -89,20 +89,9 @@
     {
         try
         {
-            var session = await Api.GetSessionAsync();
-            if (session?.IsAuthenticated != true) { households = []; State.SetHousehold(null); householdsLoaded = true; return; }
-
-            try
-            {
-                var snapshot = await Api.GetHouseholdsAsync();
-                households = snapshot.Items;
-                State.SetHousehold(snapshot.Current);
-            }
-            catch when (session.Households.Items.Count > 0)
-            {
-                households = session.Households.Items;
-                State.SetHousehold(session.Households.Current);
-            }
+            var snapshot = await Api.GetHouseholdsAsync();
+            households = snapshot.Items;
+            State.SetHousehold(snapshot.Current);
             householdsLoaded = true;
         }
         catch
