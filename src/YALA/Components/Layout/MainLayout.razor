@@ -6,7 +6,11 @@
             <img class="brand-mark" src="@Assets["yala.png"]" alt="" aria-hidden="true" width="36" height="36" />
             <span>YALA</span>
         </a>
-        <HouseholdSwitcher />
+        <AuthorizeView>
+            <Authorized>
+                <HouseholdSwitcher />
+            </Authorized>
+        </AuthorizeView>
         <AuthorizeView>
             <Authorized>
                 <div class="account-chip">

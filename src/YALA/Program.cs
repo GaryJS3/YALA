@@ -181,6 +181,26 @@ app.MapGet("/api/version", () =>
     return Results.Ok(new { Version = version, Build = build, BuildTimestampUtc = timestamp, Label = label });
 }).AllowAnonymous();
 app.MapYalaApi();
+app.MapPost("/households/select", async (HttpContext http, HouseholdService households,
+    Microsoft.AspNetCore.Antiforgery.IAntiforgery antiforgery, CancellationToken cancellationToken) =>
+{
+    await antiforgery.ValidateRequestAsync(http);
+    var form = await http.Request.ReadFormAsync(cancellationToken);
+    if (!Guid.TryParse(form["householdId"], out var householdId) ||
+        !await households.SwitchAsync(householdId, cancellationToken))
+    {
+        return Results.NotFound();
+    }
+
+    http.Response.Cookies.Append(YalaApiEndpoints.HouseholdCookieName, householdId.ToString("D"), new CookieOptions
+    {
+        HttpOnly = true,
+        IsEssential = true,
+        SameSite = SameSiteMode.Lax,
+        Secure = http.Request.IsHttps
+    });
+    return Results.LocalRedirect("/");
+}).RequireAuthorization();
 app.MapGet("/blazor.web.js", (IWebHostEnvironment environment) =>
 {
     var path = Path.Combine(environment.WebRootPath, "_framework", "blazor.web.js");

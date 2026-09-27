@@ -11,7 +11,7 @@ namespace YALA.Api;
 
 public static class YalaApiEndpoints
 {
-    private const string HouseholdCookieName = "YalaHousehold";
+    public const string HouseholdCookieName = "YalaHousehold";
 
     public static IEndpointRouteBuilder MapYalaApi(this IEndpointRouteBuilder endpoints)
     {

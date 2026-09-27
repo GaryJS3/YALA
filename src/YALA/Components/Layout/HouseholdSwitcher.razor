@@ -1,19 +1,20 @@
-@implements IDisposable
 @inject HouseholdService HouseholdService
-@inject NavigationManager NavigationManager
+@inject IHttpContextAccessor HttpContextAccessor
 
 @if (households.Count > 0)
 {
-    <label class="household-switcher">
+    <form class="household-switcher" action="/households/select" method="post" onchange="this.requestSubmit()">
+        <AntiforgeryToken />
         <span class="switcher-caption">CURRENT LIST</span>
-        <select aria-label="Current household" value="@currentId" @onchange="SwitchHouseholdAsync">
+        <select aria-label="Current household" name="householdId" value="@currentId">
             @foreach (var household in households)
             {
                 <option value="@household.Id">@household.Name</option>
             }
         </select>
+        <noscript><button type="submit">Switch</button></noscript>
         <span class="switcher-chevron" aria-hidden="true">⌄</span>
-    </label>
+    </form>
 }
 else
 {
@@ -26,27 +27,16 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        HouseholdService.CurrentHouseholdChanged += OnHouseholdChanged;
         await ReloadAsync();
     }
 
     private async Task ReloadAsync()
     {
+        var raw = HttpContextAccessor.HttpContext?.Request.Cookies[YALA.Api.YalaApiEndpoints.HouseholdCookieName];
+        if (Guid.TryParse(raw, out var selectedId)) HouseholdService.SelectHousehold(selectedId);
         households = await HouseholdService.GetHouseholdsAsync();
         var current = await HouseholdService.GetCurrentAsync();
         currentId = current?.HouseholdId.ToString() ?? string.Empty;
     }
 
-    private void OnHouseholdChanged() => _ = InvokeAsync(async () => { await ReloadAsync(); StateHasChanged(); });
-
-    private async Task SwitchHouseholdAsync(ChangeEventArgs args)
-    {
-        if (Guid.TryParse(args.Value?.ToString(), out var householdId) && await HouseholdService.SwitchAsync(householdId))
-        {
-            currentId = householdId.ToString();
-            NavigationManager.NavigateTo("/", replace: true);
-        }
-    }
-
-    public void Dispose() => HouseholdService.CurrentHouseholdChanged -= OnHouseholdChanged;
 }
