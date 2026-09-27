@@ -1,0 +1,55 @@
+@inject ApiClient Api
+@inject ClientState State
+@inject NavigationManager Navigation
+
+@if (households.Count > 0)
+{
+    <label class="household-switcher">
+        <span class="switcher-caption">CURRENT LIST</span>
+        @if (households.Count > 1)
+        {
+            <select aria-label="Current household" value="@(State.CurrentHouseholdId?.ToString() ?? "")" @onchange="SwitchHouseholdAsync">
+                @foreach (var household in households)
+                {
+                    <option value="@household.Id">@household.Name</option>
+                }
+            </select>
+            <span class="switcher-chevron" aria-hidden="true">⌄</span>
+        }
+        else
+        {
+            <span>@households[0].Name</span>
+        }
+    </label>
+}
+else if (householdsLoaded)
+{
+    <a class="household-switcher new-household-shortcut" href="/households">
+        <span class="switcher-caption">CURRENT LIST</span>
+        <span>Create your first household</span>
+        <span class="switcher-chevron" aria-hidden="true">↗</span>
+    </a>
+}
+
+@code {
+    private List<HouseholdChoice> households = [];
+    private bool householdsLoaded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var snapshot = await Api.GetHouseholdsAsync();
+        households = snapshot.Items;
+        State.SetHousehold(snapshot.Current);
+        householdsLoaded = true;
+    }
+
+    private async Task SwitchHouseholdAsync(ChangeEventArgs args)
+    {
+        if (Guid.TryParse(args.Value?.ToString(), out var id))
+        {
+            await Api.SwitchHouseholdAsync(id);
+            State.SetHousehold(households.FirstOrDefault(x => x.Id == id));
+            Navigation.NavigateTo("/", forceLoad: true);
+        }
+    }
+}

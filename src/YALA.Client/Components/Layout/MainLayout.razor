@@ -1,6 +1,5 @@
 @inherits LayoutComponentBase
 @implements IDisposable
-@inject ApiClient Api
 @inject ClientState State
 @inject NavigationManager Navigation
 @inject OfflineQueue Queue
@@ -8,34 +7,11 @@
 <div class="site-shell">
     <header class="site-header">
         <a class="brand" href="/" aria-label="YALA grocery list"><img class="brand-mark" src="/yala.png" alt="" aria-hidden="true" width="36" height="36" /><span>YALA</span></a>
-        @if (households.Count > 0)
-        {
-            <label class="household-switcher">
-                <span class="switcher-caption">CURRENT LIST</span>
-                @if (households.Count > 1)
-                {
-                    <select aria-label="Current household" value="@(State.CurrentHouseholdId?.ToString() ?? "")" @onchange="SwitchHouseholdAsync">
-                        @foreach (var household in households)
-                        {
-                            <option value="@household.Id">@household.Name</option>
-                        }
-                    </select>
-                    <span class="switcher-chevron" aria-hidden="true">⌄</span>
-                }
-                else
-                {
-                    <span>@households[0].Name</span>
-                }
-            </label>
-        }
-        else if (householdsLoaded)
-        {
-            <a class="household-switcher new-household-shortcut" href="/households">
-                <span class="switcher-caption">CURRENT LIST</span>
-                <span>Create your first household</span>
-                <span class="switcher-chevron" aria-hidden="true">↗</span>
-            </a>
-        }
+        <AuthorizeView>
+            <Authorized>
+                <HouseholdSwitcher @rendermode="@(new InteractiveWebAssemblyRenderMode(prerender: false))" />
+            </Authorized>
+        </AuthorizeView>
         <AuthorizeView>
             <Authorized>
                 <div class="account-chip">
@@ -71,8 +47,6 @@
 </div>
 
 @code {
-    private List<HouseholdChoice> households = [];
-    private bool householdsLoaded;
     private static readonly string BuildLabel = CreateBuildLabel();
 
     protected override async Task OnInitializedAsync()
@@ -80,43 +54,7 @@
         State.Changed += OnStateChanged;
         if (OperatingSystem.IsBrowser())
         {
-            await LoadHouseholdsAsync();
             State.SetConnectivity(false, (await Queue.GetAsync()).Count);
-        }
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender && OperatingSystem.IsBrowser() && !householdsLoaded)
-        {
-            await LoadHouseholdsAsync();
-            StateHasChanged();
-        }
-    }
-
-    private async Task LoadHouseholdsAsync()
-    {
-        try
-        {
-            var snapshot = await Api.GetHouseholdsAsync();
-            households = snapshot.Items;
-            State.SetHousehold(snapshot.Current);
-            householdsLoaded = true;
-        }
-        catch
-        {
-            householdsLoaded = false;
-        }
-    }
-
-    private async Task SwitchHouseholdAsync(ChangeEventArgs args)
-    {
-        if (Guid.TryParse(args.Value?.ToString(), out var id))
-        {
-            await Api.SwitchHouseholdAsync(id);
-            State.SetHousehold(households.FirstOrDefault(x => x.Id == id));
-            await LoadHouseholdsAsync();
-            Navigation.NavigateTo("/", forceLoad: true);
         }
     }
 
