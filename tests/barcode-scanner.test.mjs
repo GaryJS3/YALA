@@ -1,0 +1,27 @@
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+const bundle = readFileSync('src/YALA/wwwroot/lib/zxing/index.min.js', 'utf8');
+const browser = {}; browser.window = browser; vm.createContext(browser); vm.runInContext(bundle, browser);
+assert.equal(typeof browser.ZXing.BrowserMultiFormatReader.prototype.decode, 'function');
+const source = readFileSync('src/YALA/wwwroot/barcode-scanner.js', 'utf8').replace('await import(\'./lib/zxing/index.min.js\');', '').replaceAll('export ', '');
+let stopped = 0, callback;
+const video = { readyState: 2, play: async () => {}, srcObject: null };
+const context = { window: { isSecureContext: true, ZXing: { DecodeHintType: { POSSIBLE_FORMATS: 1 }, BarcodeFormat: {}, BrowserMultiFormatReader: class { decode() { return { getText: () => '012345678905' }; } } }, clearTimeout() {}, setTimeout(fn) { callback = fn; return 1; } }, navigator: { mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop() { stopped++; } }] }) } } };
+vm.createContext(context); vm.runInContext(source, context);
+const calls = [];
+await context.start(video, { invokeMethodAsync: async (...args) => calls.push(args) });
+await callback();
+assert.deepEqual(calls, [['BarcodeDetected', '012345678905']]); assert.equal(stopped, 1); assert.equal(video.srcObject, null);
+let resolveCamera;
+context.navigator.mediaDevices.getUserMedia = () => new Promise(resolve => resolveCamera = resolve);
+const starting = context.start(video, {});
+context.stop(video);
+resolveCamera({ getTracks: () => [{ stop() { stopped++; } }] });
+await starting; assert.equal(stopped, 2); assert.equal(video.srcObject, null);
+context.navigator.mediaDevices.getUserMedia = async () => { throw { name: 'NotAllowedError' }; };
+await assert.rejects(context.start(video, {}), /permission was denied/);
+context.window.isSecureContext = false;
+await assert.rejects(context.start(video, {}), /requires HTTPS/);
+console.log('Passed: decoder API, scanning without BarcodeDetector, lookup callback, track cleanup, cancellation during permission prompt, permission and HTTPS errors.');
+

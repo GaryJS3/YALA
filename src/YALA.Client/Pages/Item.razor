@@ -106,7 +106,7 @@ else
             <div class="product-grid">@foreach (var variant in details.Variants) { <article class="product-card">@if (!string.IsNullOrWhiteSpace(variant.ImagePath)) { <ImageLightbox Src="@($"/images/{variant.ImagePath}")" Alt="@variant.Name" TriggerClass="product-card-image" Loading="lazy" /> } else { <div class="product-placeholder">◇</div> }<div class="variant-title"><strong>@variant.Name</strong>@if (variant.IsPreferred) { <span class="badge">Preferred</span> }</div>@if (!string.IsNullOrWhiteSpace(variant.Brand) || !string.IsNullOrWhiteSpace(variant.Size)) { <small>@variant.Brand @variant.Size</small> }<div class="barcode-list">@foreach (var barcode in variant.Barcodes) { <span class="barcode-chip">@barcode.Barcode</span> }</div>@if (editing) { <button type="button" class="text-button remove-variant-action" @onclick="() => RemoveVariantAsync(variant.Id)">Remove product</button> }</article> }</div>
             @if (editing)
             {
-                <div class="variant-entry"><h3>Add an exact product</h3><div class="form-grid"><div class="form-field"><label>Product name</label><input @bind="variantName" /></div><div class="form-field"><label>Brand</label><input @bind="variantBrand" /></div><div class="form-field"><label>Size</label><input @bind="variantSize" /></div><div class="form-field"><label>Barcode</label><input @bind="variantBarcode" inputmode="numeric" /></div></div><div class="detail-inline-form"><button type="button" class="button button-outline" @onclick="LookupAsync" disabled="@lookingUp">@(lookingUp ? "Looking up…" : "Look up barcode")</button><button type="button" class="button button-primary" @onclick="AddVariantAsync">Add product <span>+</span></button></div>@if (lookup is not null) { <p class="notice" role="status">Found: @(lookup.Name ?? "Product")@(string.IsNullOrWhiteSpace(lookup.Brand) ? "" : $" · {lookup.Brand}")</p> }</div>
+                <div class="variant-entry"><h3>Add an exact product</h3><BarcodeScanner OnDetected="BarcodeDetectedAsync" /><div class="form-grid"><div class="form-field"><label>Product name</label><input @bind="variantName" /></div><div class="form-field"><label>Brand</label><input @bind="variantBrand" /></div><div class="form-field"><label>Size</label><input @bind="variantSize" /></div><div class="form-field"><label>Barcode</label><input @bind="variantBarcode" inputmode="numeric" /></div></div><div class="detail-inline-form"><button type="button" class="button button-outline" @onclick="LookupAsync" disabled="@lookingUp">@(lookingUp ? "Looking up…" : "Look up barcode")</button><button type="button" class="button button-primary" @onclick="AddVariantAsync">Add product <span>+</span></button></div>@if (lookup is not null) { <p class="notice" role="status">Found: @(lookup.Name ?? "Product")@(string.IsNullOrWhiteSpace(lookup.Brand) ? "" : $" · {lookup.Brand}")</p> }</div>
             }
         </section>
     }
@@ -234,6 +234,12 @@ else
     }
 
     private async Task RemoveAliasAsync(Guid aliasId) { try { await Api.RemoveAliasAsync(aliasId); details = await Api.GetCatalogDetailsAsync(Id); } catch (Exception ex) { error = ex.Message; } }
+
+    private async Task BarcodeDetectedAsync(string barcode)
+    {
+        variantBarcode = barcode;
+        await LookupAsync();
+    }
 
     private async Task LookupAsync()
     {

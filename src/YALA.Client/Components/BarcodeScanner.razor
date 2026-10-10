@@ -1,0 +1,79 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<button type="button" class="button button-outline scanner-button" @onclick="ToggleAsync">@(scanning ? "Stop camera" : "Scan camera")</button>
+@if (scanning)
+{
+    <div class="scanner-viewport"><video @ref="video" autoplay muted playsinline aria-label="Barcode scanner camera"></video><span>Hold the barcode steady inside the frame</span></div>
+}
+@if (!string.IsNullOrEmpty(message))
+{
+    <p class="notice" role="status">@message</p>
+}
+
+@code {
+    [Parameter] public EventCallback<string> OnDetected { get; set; }
+    private ElementReference video;
+    private IJSObjectReference? module;
+    private DotNetObjectReference<BarcodeScanner>? reference;
+    private bool scanning, startPending, disposed;
+    private string? message;
+
+    private async Task ToggleAsync()
+    {
+        if (scanning) { await StopAsync(); return; }
+        message = "Starting camera…";
+        scanning = startPending = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!startPending || disposed) return;
+        startPending = false;
+        try
+        {
+            module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./barcode-scanner.js");
+            if (!scanning || disposed) return;
+            reference ??= DotNetObjectReference.Create(this);
+            await module.InvokeVoidAsync("start", video, reference);
+            if (scanning) message = "Camera ready. Hold a barcode steady inside the frame.";
+        }
+        catch (JSException ex) { scanning = false; message = ex.Message; }
+        if (!disposed) await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task BarcodeDetected(string barcode) => InvokeAsync(async () =>
+    {
+        scanning = false;
+        message = $"Scanned {barcode}.";
+        await OnDetected.InvokeAsync(barcode);
+        StateHasChanged();
+    });
+
+    [JSInvokable]
+    public Task ScannerFailed(string reason) => InvokeAsync(() => { scanning = false; message = reason; StateHasChanged(); });
+
+    private async Task StopAsync()
+    {
+        scanning = startPending = false;
+        message = null;
+        if (module is not null)
+        {
+            try { await module.InvokeVoidAsync("stop", video); }
+            catch (JSDisconnectedException) { }
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        disposed = true;
+        await StopAsync();
+        reference?.Dispose();
+        if (module is not null)
+        {
+            try { await module.DisposeAsync(); }
+            catch (JSDisconnectedException) { }
+        }
+    }
+}

@@ -110,7 +110,7 @@ dotnet ef database update --project src/YALA/YALA.csproj
 - Items and Stores list views without duplicating shopping-list rows. Store assignment remains separate from store availability.
 - Household-scoped notifications for live list changes inside the single running instance.
 
-Images are limited to JPEG, PNG, or WebP files up to 4 MB. Camera scanning requires HTTPS (or localhost), camera permission, and a browser with the Barcode Detection API; manual barcode entry is always available. Product lookup queries the four Open Facts databases and UPCitemdb, then merges the richest available result. Lookup services receive the barcode and the server's public IP address.
+Images are limited to JPEG, PNG, or WebP files up to 4 MB. Camera scanning requires HTTPS (or localhost), camera permission, and a browser with camera access; manual barcode entry is always available. Product lookup queries the four Open Facts databases and UPCitemdb, then merges the richest available result. Lookup services receive the barcode and the server's public IP address.
 
 ## Data and privacy
 

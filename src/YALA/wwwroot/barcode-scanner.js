@@ -1,36 +1,50 @@
-let stream;
-let timer;
-
-export function isSupported() {
-    return Boolean(navigator.mediaDevices?.getUserMedia && window.BarcodeDetector);
-}
-
+let stream, timer, generation = 0;
+export function isSupported() { return Boolean(navigator.mediaDevices?.getUserMedia); }
 export async function start(video, dotNet) {
-    if (!isSupported()) throw new Error("Camera barcode scanning is not supported by this browser. Enter the barcode manually instead.");
     stop(video);
-    const supported = await BarcodeDetector.getSupportedFormats();
-    const formats = ["ean_13", "ean_8", "upc_a", "upc_e", "itf", "code_128"].filter(format => supported.includes(format));
-    if (formats.length === 0) throw new Error("This browser cannot detect retail barcodes. Enter the barcode manually instead.");
-    const detector = new BarcodeDetector({ formats });
-    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
-    video.srcObject = stream;
-    await video.play();
-    timer = window.setInterval(async () => {
-        if (!stream || video.readyState < 2) return;
-        try {
-            const value = (await detector.detect(video))[0]?.rawValue;
-            if (value) {
-                stop(video);
-                await dotNet.invokeMethodAsync("BarcodeDetected", value);
+    const run = generation;
+    if (!window.isSecureContext) throw new Error('Camera access requires HTTPS. Open YALA using HTTPS or enter the barcode manually.');
+    if (!isSupported()) throw new Error('Camera access is unavailable in this browser. Enter the barcode manually.');
+    try {
+        await import('./lib/zxing/index.min.js');
+        const hints = new Map([[window.ZXing.DecodeHintType.POSSIBLE_FORMATS, ['EAN_13', 'EAN_8', 'UPC_A', 'UPC_E', 'ITF', 'CODE_128'].map(name => window.ZXing.BarcodeFormat[name])]]);
+        const reader = new window.ZXing.BrowserMultiFormatReader(hints);
+        if (run !== generation) return;
+        const acquired = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+        if (run !== generation) { acquired.getTracks().forEach(track => track.stop()); return; }
+        stream = acquired;
+        video.srcObject = stream;
+        await video.play();
+        const scan = async () => {
+            if (run !== generation) return;
+            let value;
+            if (video.readyState >= 2) {
+                try { value = reader.decode(video).getText(); }
+                catch (error) {
+                    if (!(error instanceof window.ZXing.NotFoundException || error instanceof window.ZXing.ChecksumException || error instanceof window.ZXing.FormatException)) {
+                        stop(video);
+                        await dotNet.invokeMethodAsync('ScannerFailed', 'The camera could not read barcodes. Restart scanning or enter the barcode manually.');
+                        return;
+                    }
+                }
             }
-        } catch { }
-    }, 300);
+            if (value) { stop(video); await dotNet.invokeMethodAsync('BarcodeDetected', value); return; }
+            timer = window.setTimeout(scan, 300);
+        };
+        if (run === generation) timer = window.setTimeout(scan, 0);
+    } catch (error) {
+        if (run !== generation) return;
+        stop(video);
+        if (error.name === 'NotAllowedError') throw new Error('Camera permission was denied. Allow camera access for YALA in your browser settings, then try again.');
+        if (error.name === 'NotFoundError') throw new Error('No camera was found. Enter the barcode manually.');
+        if (error.name === 'NotReadableError') throw new Error('The camera is busy or unavailable. Close other apps using it, then try again.');
+        throw error;
+    }
 }
-
 export function stop(video) {
-    if (timer) window.clearInterval(timer);
-    timer = undefined;
-    if (stream) stream.getTracks().forEach(track => track.stop());
+    generation++;
+    window.clearTimeout(timer);
+    stream?.getTracks().forEach(track => track.stop());
     stream = undefined;
     if (video) video.srcObject = null;
 }
