@@ -1,3 +1,4 @@
+using YALA.Client.Models;
 using Microsoft.EntityFrameworkCore;
 using YALA.Data;
 using YALA.Data.Entities;

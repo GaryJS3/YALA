@@ -1,0 +1,22 @@
+namespace YALA.Client.Models;
+
+public sealed record MemberCommand(string UserName);
+public sealed record CategoryCommand(Guid? Id, string Name);
+public sealed record CategoryMoveCommand(Guid Id, int Direction);
+public sealed record HouseholdCommand(Guid HouseholdId);
+public sealed record HouseholdCreateCommand(string Name, bool MakeDefault);
+public sealed record HouseholdNameCommand(string Name);
+public sealed record ListItemCommand(Guid CatalogItemId);
+public sealed record QuickAddCommand(string Name);
+public sealed record ListRowCommand(Guid Id);
+public sealed record QuantityCommand(Guid Id, decimal Delta);
+public sealed record AssignStoreCommand(Guid Id, Guid? StoreId);
+public sealed record AliasCommand(Guid ItemId, string Alias);
+public sealed record PromoteCommand(Guid ShoppingListItemId);
+public sealed record VariantStoreCommand(Guid VariantId, Guid StoreId, bool Available);
+public sealed record ItemStoreCommand(Guid ItemId, Guid StoreId, bool Available);
+public sealed record StoreCommand(Guid? Id, string Name);
+public sealed record StoreActiveCommand(Guid Id, bool Active);
+public sealed record StoreMoveCommand(Guid Id, int Direction);
+public sealed record PreferredCommand(Guid OfferId, bool Preferred);
+public sealed record UserPasswordCommand(string UserId, string Password);

@@ -1,6 +1,5 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using YALA.Data;
@@ -38,7 +37,7 @@ public sealed class AdministratorAuthorizationHandler(IDbContextFactory<Applicat
 public sealed class UserAdministrationService(
     UserManager<ApplicationUser> userManager,
     IDbContextFactory<ApplicationDbContext> dbFactory,
-    AuthenticationStateProvider authenticationStateProvider)
+    CurrentUserContext currentUser)
 {
     public const string AdministratorPolicy = "Administrator";
 
@@ -137,8 +136,7 @@ public sealed class UserAdministrationService(
 
     private async Task<string> RequireAdministratorAsync(CancellationToken cancellationToken)
     {
-        var state = await authenticationStateProvider.GetAuthenticationStateAsync();
-        var userId = state.User.FindFirstValue(ClaimTypes.NameIdentifier)
+        var userId = await currentUser.GetUserIdAsync()
             ?? throw new UnauthorizedAccessException("Sign in to manage users.");
         await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
         if (!await db.Users.AnyAsync(x => x.Id == userId && x.IsAdministrator, cancellationToken))

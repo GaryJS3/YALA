@@ -4,19 +4,20 @@ using YALA.Client.Models;
 
 namespace YALA.Client.Services;
 
-public sealed class OfflineSnapshotCache(IJSRuntime js)
+public sealed class OfflineSnapshotCache(IJSRuntime js, ClientState state)
 {
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
 
     public async Task SaveSessionAsync(SessionSnapshot session) => await SaveAsync("yala.session", session);
     public async Task<SessionSnapshot?> GetSessionAsync() => await GetAsync<SessionSnapshot>("yala.session");
-    public async Task SaveListAsync(ListSnapshot snapshot) => await SaveAsync("yala.list", snapshot);
-    public async Task<ListSnapshot?> GetListAsync() => await GetAsync<ListSnapshot>("yala.list");
+    private string ListKey => $"yala.list:{state.UserId}:{state.CurrentHouseholdId}";
+    public async Task SaveListAsync(ListSnapshot snapshot) => await SaveAsync(ListKey, snapshot);
+    public async Task<ListSnapshot?> GetListAsync() => await GetAsync<ListSnapshot>(ListKey);
 
     public async Task ClearAsync()
     {
         await js.InvokeVoidAsync("localStorage.removeItem", "yala.session");
-        await js.InvokeVoidAsync("localStorage.removeItem", "yala.list");
+        await js.InvokeVoidAsync("localStorage.removeItem", ListKey);
     }
 
     private async Task SaveAsync<T>(string key, T value) =>
@@ -29,6 +30,6 @@ public sealed class OfflineSnapshotCache(IJSRuntime js)
             var value = await js.InvokeAsync<string?>("localStorage.getItem", key);
             return string.IsNullOrWhiteSpace(value) ? default : JsonSerializer.Deserialize<T>(value, Options);
         }
-        catch (JSException) { return default; }
+        catch (Exception ex) when (ex is JSException or JsonException) { return default; }
     }
 }

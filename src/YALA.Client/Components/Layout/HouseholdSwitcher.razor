@@ -37,10 +37,14 @@ else if (householdsLoaded)
 
     protected override async Task OnInitializedAsync()
     {
-        var snapshot = await Api.GetHouseholdsAsync();
-        households = snapshot.Items;
-        State.SetHousehold(snapshot.Current);
-        householdsLoaded = true;
+        try
+        {
+            var snapshot = await Api.GetHouseholdsAsync();
+            households = snapshot.Items;
+            State.SetHousehold(snapshot.Current);
+            householdsLoaded = true;
+        }
+        catch (Exception ex) when (OfflineSyncService.IsConnectionFailure(ex)) { }
     }
 
     private async Task SwitchHouseholdAsync(ChangeEventArgs args)

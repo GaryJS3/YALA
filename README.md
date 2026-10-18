@@ -17,7 +17,7 @@ docker compose up -d --build
 docker compose ps
 ```
 
-Open `http://127.0.0.1:8080` locally, or configure a reverse proxy to send HTTPS traffic to that address. On first launch, create the first username, password, and household. Public registration closes once that account exists. Household members can create additional local accounts and add existing YALA users to their household.
+Open `http://127.0.0.1:8080` locally, or configure a reverse proxy to send HTTPS traffic to that address. On first launch, create the first username, password, and household. Public registration closes once that account exists. Administrators can create additional local accounts. Household members can add existing YALA users to their household.
 
 The container listens on port `8080`. The named volume `yala-data` is mounted at `/data` and contains:
 
@@ -45,7 +45,7 @@ lists.example.com {
 }
 ```
 
-Caddy handles WebSocket upgrades used by Blazor Server. For Nginx, proxy the `Host`, `X-Forwarded-For`, and `X-Forwarded-Proto` headers and enable HTTP/1.1 WebSocket upgrades. The Compose port binds to `127.0.0.1` so the application port is not exposed directly to the network.
+The interactive grocery screens run in WebAssembly and call the HTTP API. For Nginx, proxy the `Host`, `X-Forwarded-For`, and `X-Forwarded-Proto` headers. The Compose port binds to `127.0.0.1` so the application port is not exposed directly to the network.
 
 ### Back up and restore
 
@@ -82,6 +82,8 @@ dotnet tool restore
 dotnet restore YALA.slnx
 dotnet build YALA.slnx
 dotnet test YALA.slnx
+node --test tests/barcode-scanner.test.mjs
+node --test tests/connectivity.test.mjs
 dotnet run --project src/YALA/YALA.csproj
 ```
 
@@ -99,6 +101,14 @@ Migrations are applied automatically at startup. For a local manual update, run:
 dotnet ef database update --project src/YALA/YALA.csproj
 ```
 
+## Application structure and offline changes
+
+The active grocery pages and reusable UI components live in `src/YALA.Client` and run in WebAssembly. The server hosts the static layout, account/setup pages, HTTP API, and database services. API request contracts and shopping-list grouping are shared with the client. Tests exercise the production client against HTTP endpoints, render the active Home component, and dispatch its quick-add events.
+
+Each browser tab remembers its household independently. API reads, writes, and image uploads use that selection. Cached lists and queued changes are scoped to their original user and household. Network failures queue list changes; rejected HTTP requests display an error. Reconnecting or choosing **Sync now** retries pending changes for the current household. Rejected saved changes have separate Retry and Discard controls and do not block later changes. Logging out clears cached identity, lists, and pending changes from that browser.
+
+Older queued changes without household/user metadata are retained with a notice and are never automatically replayed. Check the list and re-add missing items before dismissing that notice.
+
 ## What works today
 
 - Initial local account and household setup, login, logout, and remember-me.
@@ -108,7 +118,7 @@ dotnet ef database update --project src/YALA/YALA.csproj
 - Catalog editing, categories, favorites, archive/restore, aliases, exact product variants, multiple barcodes, optional item/product images, and camera/manual barcode lookup.
 - Household-specific stores with dedicated detail pages, custom ordering, generic and variant-specific offers, aisle notes, and preserved manual price history with last and average prices.
 - Items and Stores list views without duplicating shopping-list rows. Store assignment remains separate from store availability.
-- Household-scoped notifications for live list changes inside the single running instance.
+- Offline list snapshots, household-scoped queued changes, and reconnection sync.
 
 Images are limited to JPEG, PNG, or WebP files up to 4 MB. Camera scanning requires HTTPS (or localhost), camera permission, and a browser with camera access; manual barcode entry is always available. Product lookup queries the four Open Facts databases and UPCitemdb, then merges the richest available result. Lookup services receive the barcode and the server's public IP address.
 

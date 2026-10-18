@@ -13,6 +13,7 @@ builder.Services.AddScoped(_ => new HttpClient
 builder.Services.AddScoped<ApiClient>();
 builder.Services.AddScoped<ClientState>();
 builder.Services.AddScoped<OfflineQueue>();
+builder.Services.AddScoped<OfflineSyncService>();
 builder.Services.AddScoped<OfflineSnapshotCache>();
 
 await builder.Build().RunAsync();

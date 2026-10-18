@@ -4,6 +4,8 @@ namespace YALA.Client.Services;
 
 public sealed class ClientState
 {
+    public string? UserId { get; private set; }
+    public void SetUser(string? userId) => UserId = userId;
     public Guid? CurrentHouseholdId { get; private set; }
     public string? CurrentHouseholdName { get; private set; }
     public bool IsOffline { get; private set; }

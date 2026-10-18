@@ -16,7 +16,7 @@ public sealed class ReconnectExperienceTests
     [Fact]
     public void ReconnectStatus_IsANonModalBanner()
     {
-        var layout = ReadRepositoryFile("src", "YALA.Client", "Components", "Layout", "MainLayout.razor");
+        var layout = ReadRepositoryFile("src", "YALA.Client", "Pages", "Home.razor");
 
         Assert.Contains("connection-banner", layout, StringComparison.Ordinal);
         Assert.Contains("role=\"status\"", layout, StringComparison.Ordinal);

@@ -8,7 +8,6 @@ using YALA.Components.Account;
 using YALA.Data;
 using YALA.Services;
 using YALA.Client;
-using YALA.Client.Services;
 using YALA.Api;
 using System.Security.Claims;
 
@@ -24,14 +23,6 @@ builder.Services.AddScoped<IdentityRedirectManager>();
 builder.Services.AddScoped<AuthenticationStateProvider, IdentityRevalidatingAuthenticationStateProvider>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<CurrentUserContext>();
-builder.Services.AddScoped<ClientState>();
-builder.Services.AddScoped<OfflineQueue>();
-builder.Services.AddScoped<OfflineSnapshotCache>();
-builder.Services.AddHttpClient<ApiClient>(client =>
-{
-    client.BaseAddress = new Uri("http://127.0.0.1/");
-});
-
 builder.Services.AddAuthentication(options =>
     {
         options.DefaultScheme = IdentityConstants.ApplicationScheme;
@@ -164,7 +155,8 @@ else
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
 }
-app.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
+app.UseWhen(context => !context.Request.Path.StartsWithSegments("/api"), branch =>
+    branch.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true));
 app.UseAntiforgery();
 
 app.MapStaticAssets();
@@ -181,26 +173,6 @@ app.MapGet("/api/version", () =>
     return Results.Ok(new { Version = version, Build = build, BuildTimestampUtc = timestamp, Label = label });
 }).AllowAnonymous();
 app.MapYalaApi();
-app.MapPost("/households/select", async (HttpContext http, HouseholdService households,
-    Microsoft.AspNetCore.Antiforgery.IAntiforgery antiforgery, CancellationToken cancellationToken) =>
-{
-    await antiforgery.ValidateRequestAsync(http);
-    var form = await http.Request.ReadFormAsync(cancellationToken);
-    if (!Guid.TryParse(form["householdId"], out var householdId) ||
-        !await households.SwitchAsync(householdId, cancellationToken))
-    {
-        return Results.NotFound();
-    }
-
-    http.Response.Cookies.Append(YalaApiEndpoints.HouseholdCookieName, householdId.ToString("D"), new CookieOptions
-    {
-        HttpOnly = true,
-        IsEssential = true,
-        SameSite = SameSiteMode.Lax,
-        Secure = http.Request.IsHttps
-    });
-    return Results.LocalRedirect("/");
-}).RequireAuthorization();
 app.MapGet("/blazor.web.js", (IWebHostEnvironment environment) =>
 {
     var path = Path.Combine(environment.WebRootPath, "_framework", "blazor.web.js");
@@ -249,3 +221,5 @@ app.MapRazorComponents<App>()
 app.MapAdditionalIdentityEndpoints();
 
 app.Run();
+
+public partial class Program;

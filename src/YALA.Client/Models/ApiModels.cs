@@ -2,6 +2,7 @@ namespace YALA.Client.Models;
 
 public sealed class SessionSnapshot
 {
+    public string? UserId { get; set; }
     public bool IsAuthenticated { get; set; }
     public bool RequiresSetup { get; set; }
     public string? UserName { get; set; }
@@ -10,6 +11,13 @@ public sealed class SessionSnapshot
 }
 public sealed class ManagedUser { public string Id { get; set; } = ""; public string UserName { get; set; } = ""; public string DisplayName { get; set; } = ""; public bool IsAdministrator { get; set; } public List<string> Households { get; set; } = []; }
 public sealed class UserCreateRequest { public string DisplayName { get; set; } = ""; public string UserName { get; set; } = ""; public string Password { get; set; } = ""; public Guid? HouseholdId { get; set; } }
+public sealed record CatalogFlagRequest(Guid Id, bool Value);
+public sealed record HouseholdMemberChoice(string UserId, string DisplayName, string UserName);
+public sealed class HouseholdSettings
+{
+    public List<HouseholdMemberChoice> Members { get; set; } = [];
+    public List<string> AvailableUserNames { get; set; } = [];
+}
 
 public sealed class HouseholdSnapshot
 {
@@ -26,28 +34,6 @@ public sealed class ListSnapshot
     public List<ShoppingListRow> Rows { get; set; } = [];
     public List<StoreSummary> Stores { get; set; } = [];
 }
-
-public sealed class ShoppingListRow
-{
-    public Guid Id { get; set; }
-    public Guid? CatalogItemId { get; set; }
-    public string Name { get; set; } = "";
-    public string? Description { get; set; }
-    public string? ImagePath { get; set; }
-    public decimal Quantity { get; set; }
-    public bool IsChecked { get; set; }
-    public bool IsFavorite { get; set; }
-    public Guid? AssignedStoreId { get; set; }
-    public string? AssignedStoreName { get; set; }
-    public string? CategoryName { get; set; }
-    public List<StorePrice> StorePrices { get; set; } = [];
-    public List<ExactProductSummary> ExactProducts { get; set; } = [];
-    public bool IsAdHoc => CatalogItemId is null;
-}
-
-public sealed class StorePrice { public Guid StoreId { get; set; } public string StoreName { get; set; } = ""; public decimal? Price { get; set; } public bool IsAssigned { get; set; } public bool IsPreferred { get; set; } public string? ImagePath { get; set; } }
-public sealed class ExactProductSummary { public string Name { get; set; } = ""; public string? Brand { get; set; } public string? Size { get; set; } public bool IsPreferred { get; set; } public List<string> StoreNames { get; set; } = []; }
-public sealed class QuickAddChoice { public Guid Id { get; set; } public string Name { get; set; } = ""; public bool IsFavorite { get; set; } public DateTimeOffset? LastPurchased { get; set; } public int PurchaseCount { get; set; } }
 
 public sealed class CatalogSnapshot { public List<CatalogEntry> Items { get; set; } = []; public List<AdHocCatalogEntry> AdHocItems { get; set; } = []; public List<CategoryChoice> Categories { get; set; } = []; }
 public sealed class CatalogFormOptions { public List<CategoryChoice> Categories { get; set; } = []; }

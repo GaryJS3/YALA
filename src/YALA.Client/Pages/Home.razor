@@ -1,14 +1,17 @@
 @page "/"
 @attribute [AllowAnonymous]
 @rendermode @(new InteractiveWebAssemblyRenderMode(prerender: false))
-@implements IDisposable
+@implements IAsyncDisposable
+@inject IJSRuntime JS
 @inject ApiClient Api
 @inject ClientState State
 @inject NavigationManager Navigation
+@inject OfflineSyncService Sync
 @inject OfflineQueue Queue
 @inject OfflineSnapshotCache Cache
 
 <PageTitle>Grocery list · YALA</PageTitle>
+@if (!string.IsNullOrWhiteSpace(error)) { <p class="notice error" role="alert">@error</p> }
 
 @if (loading)
 {
@@ -26,7 +29,22 @@ else
 {
     var groups = StoreGroups();
     var visibleGroups = FilterStoreGroups(groups);
-    <section class="quick-add-panel" aria-label="Quick add an item"><div class="quick-add-title"><span class="plus-disc">+</span><span>Add to the list</span><span class="quick-hint">Type an item, or pick a regular</span></div><div class="quick-entry"><span class="search-mark" aria-hidden="true">⌕</span><input @bind="query" @bind:event="oninput" @bind:after="LoadSuggestionsAsync" @onkeydown="HandleQuickAddKeyAsync" placeholder="Milk, apples, the good coffee…" aria-label="Search or create a grocery item" autocomplete="off" />@if (!string.IsNullOrWhiteSpace(query)) { <button type="button" class="button button-primary add-query-button" @onclick="QuickAddTypedAsync">Add <span>↵</span></button> }</div>
+    @if (legacyChanges)
+    {
+        <p class="notice" role="status">This browser has changes saved by an older version. Their original household was not recorded, so they cannot be safely synced. Check your list and re-add any missing items, then <button class="text-button" @onclick="DiscardLegacyAsync">dismiss old changes</button>.</p>
+    }
+    @if (State.IsOffline || pending.Count > 0)
+    {
+    <div class="connection-banner" role="status">@(State.IsOffline ? "Offline" : "Online") · @pending.Count changes waiting <button class="text-button" @onclick="RetryPendingAsync">Sync now</button></div>
+    }
+    @foreach (var mutation in pending.Where(x => x.Error is not null))
+    {
+        <div class="notice error" role="alert">A saved change was rejected: @mutation.Error
+            <button class="text-button" @onclick="() => RetryAsync(mutation.OperationId)">Retry</button>
+            <button class="text-button" @onclick="() => DiscardAsync(mutation.OperationId)">Discard</button>
+        </div>
+    }
+    <section class="quick-add-panel" aria-label="Quick add an item"><div class="quick-add-title"><span class="plus-disc">+</span><span>Add to the list</span><span class="quick-hint">Type an item, or pick a regular</span></div><div class="quick-entry"><span class="search-mark" aria-hidden="true">⌕</span><input @bind="query" @bind:event="oninput" @bind:after="LoadSuggestionsSafelyAsync" @onkeydown="HandleQuickAddKeyAsync" placeholder="Milk, apples, the good coffee…" aria-label="Search or create a grocery item" autocomplete="off" />@if (!string.IsNullOrWhiteSpace(query)) { <button type="button" class="button button-primary add-query-button" @onclick="QuickAddTypedAsync">Add <span>↵</span></button> }</div>
         @if (suggestions.Count > 0) { <div class="quick-picks"><span class="quick-picks-label">MATCHING ITEMS</span><div class="pick-list">@foreach (var suggestion in suggestions) { <button type="button" class="pick-chip" @onclick="() => AddItemAsync(suggestion.Id)">@if (suggestion.IsFavorite) { <span class="favorite-star">★</span> }@suggestion.Name <span class="pick-plus">+</span></button> }</div></div> }
     </section>
     @if (!string.IsNullOrWhiteSpace(query) && !suggestions.Any(x => string.Equals(x.Name, query.Trim(), StringComparison.OrdinalIgnoreCase))) { <button class="create-from-search" type="button" @onclick="QuickAddTypedAsync">Add <strong>“@query.Trim()”</strong> without saving it to the catalog <span>↗</span></button> }
@@ -46,6 +64,10 @@ else
     private IReadOnlyList<QuickAddChoice> suggestions = [];
     private string query = "";
     private bool loading = true;
+    private bool legacyChanges;
+    private string? error;
+    private IReadOnlyList<QueuedMutation> pending = [];
+    private DotNetObjectReference<Home>? reference;
     private const string AllStoresFilter = "all";
     private string selectedStoreFilter = AllStoresFilter;
     private ListView view = ListView.Items;
@@ -61,28 +83,32 @@ else
     {
         try
         {
+            legacyChanges = await Queue.HasLegacyChangesAsync();
             session = await Api.GetSessionAsync();
             if (session is not null) await Cache.SaveSessionAsync(session);
             if (session?.IsAuthenticated == true && session.Households.Current is not null)
             {
                 State.SetHousehold(session.Households.Current);
-                await FlushQueueAsync();
+                await Sync.FlushAsync();
+                pending = await Sync.GetPendingAsync();
                 await LoadAsync();
                 await LoadSuggestionsAsync();
             }
         }
-        catch
+        catch (Exception ex) when (OfflineSyncService.IsConnectionFailure(ex))
         {
             session = await Cache.GetSessionAsync();
             if (session?.IsAuthenticated == true && session.Households.Current is not null)
             {
+                State.SetUser(session.UserId);
                 State.SetHousehold(session.Households.Current);
                 var cached = await Cache.GetListAsync();
                 if (cached is not null) { rows = cached.Rows; stores = cached.Stores; }
             }
-            State.SetConnectivity(true, (await Queue.GetAsync()).Count);
+            State.SetConnectivity(true, (await Sync.GetPendingAsync()).Count);
         }
-        finally { loading = false; }
+        catch (Exception ex) { error = ex.Message; }
+        finally { pending = await Sync.GetPendingAsync(); loading = false; }
     }
 
     private async Task LoadAsync()
@@ -92,46 +118,78 @@ else
         stores = snapshot.Stores;
         ApplyQueryState();
         await Cache.SaveListAsync(snapshot);
-        State.SetConnectivity(false);
+        State.SetConnectivity(false, (await Sync.GetPendingAsync()).Count);
     }
 
     private async Task LoadSuggestionsAsync() => suggestions = await Api.GetSuggestionsAsync(query);
-    private async Task AddItemAsync(Guid id) { await RunQueueableAsync("POST", "api/list/add", new { CatalogItemId = id }, () => Api.AddItemAsync(id)); query = ""; await LoadAsync(); await LoadSuggestionsAsync(); }
-    private async Task QuickAddTypedAsync() { if (!string.IsNullOrWhiteSpace(query)) { await RunQueueableAsync("POST", "api/list/quick-add", new { Name = query.Trim() }, () => Api.QuickAddAsync(query.Trim())); query = ""; await LoadAsync(); await LoadSuggestionsAsync(); } }
+    private async Task AddItemAsync(Guid id)
+    {
+        if (!await RunQueueableAsync("api/list/add", new ListItemCommand(id), () => Api.AddItemAsync(id))) return;
+        query = "";
+        await TryLoadAsync();
+        await LoadSuggestionsSafelyAsync();
+    }
+
+    private async Task QuickAddTypedAsync()
+    {
+        var name = query.Trim();
+        if (name.Length == 0) return;
+        if (!await RunQueueableAsync("api/list/quick-add", new QuickAddCommand(name), () => Api.QuickAddAsync(name))) return;
+        query = "";
+        await TryLoadAsync();
+        await LoadSuggestionsSafelyAsync();
+    }
     private async Task HandleQuickAddKeyAsync(KeyboardEventArgs args) { if (args.Key == "Enter") await QuickAddTypedAsync(); }
-    private async Task ToggleAsync(Guid id) { await RunQueueableAsync("POST", "api/list/toggle", new { Id = id }, () => Api.ToggleAsync(id)); await TryLoadAsync(); }
-    private async Task ChangeQuantityAsync((Guid Id, decimal Delta) change) { await RunQueueableAsync("POST", "api/list/quantity", new { Id = change.Id, Delta = change.Delta }, () => Api.ChangeQuantityAsync(change.Id, change.Delta)); await TryLoadAsync(); }
-    private async Task RemoveAsync(Guid id) { await RunQueueableAsync("POST", "api/list/remove", new { Id = id }, () => Api.RemoveAsync(id)); rows.RemoveAll(x => x.Id == id); await TryLoadAsync(); }
-    private async Task AssignStoreAsync((Guid Id, Guid? StoreId) value) { await RunQueueableAsync("POST", "api/list/assign-store", new { Id = value.Id, StoreId = value.StoreId }, () => Api.AssignStoreAsync(value.Id, value.StoreId)); await TryLoadAsync(); }
-    private async Task ClearCheckedAsync() { await RunQueueableAsync("POST", "api/list/clear-checked", null, () => Api.ClearCheckedAsync()); await TryLoadAsync(); await LoadSuggestionsAsync(); }
+    private async Task ToggleAsync(Guid id) { await RunQueueableAsync("api/list/toggle", new ListRowCommand(id), () => Api.ToggleAsync(id)); await TryLoadAsync(); }
+    private async Task ChangeQuantityAsync((Guid Id, decimal Delta) change) { await RunQueueableAsync("api/list/quantity", new QuantityCommand(change.Id, change.Delta), () => Api.ChangeQuantityAsync(change.Id, change.Delta)); await TryLoadAsync(); }
+    private async Task RemoveAsync(Guid id) { if (await RunQueueableAsync("api/list/remove", new ListRowCommand(id), () => Api.RemoveAsync(id))) rows.RemoveAll(x => x.Id == id); await TryLoadAsync(); }
+    private async Task AssignStoreAsync((Guid Id, Guid? StoreId) value) { await RunQueueableAsync("api/list/assign-store", new AssignStoreCommand(value.Id, value.StoreId), () => Api.AssignStoreAsync(value.Id, value.StoreId)); await TryLoadAsync(); }
+    private async Task ClearCheckedAsync() { await RunQueueableAsync("api/list/clear-checked", null, () => Api.ClearCheckedAsync()); await TryLoadAsync(); await LoadSuggestionsSafelyAsync(); }
 
     private async Task TryLoadAsync()
     {
         try { await LoadAsync(); }
-        catch { State.SetConnectivity(true, (await Queue.GetAsync()).Count); }
+        catch (Exception ex) when (OfflineSyncService.IsConnectionFailure(ex)) { State.SetConnectivity(true, (await Sync.GetPendingAsync()).Count); }
+        catch (Exception ex) { error = ex.Message; }
+        pending = await Sync.GetPendingAsync();
     }
 
-    private async Task RunQueueableAsync(string method, string uri, object? body, Func<Task> send)
+    private async Task LoadSuggestionsSafelyAsync()
     {
-        try { await send(); State.SetConnectivity(false, (await Queue.GetAsync()).Count); }
-        catch
-        {
-            await Queue.EnqueueAsync(new QueuedMutation { Method = method, Uri = uri, BodyJson = body is null ? null : System.Text.Json.JsonSerializer.Serialize(body) });
-            State.SetConnectivity(true, (await Queue.GetAsync()).Count);
-        }
+        try { await LoadSuggestionsAsync(); }
+        catch (Exception ex) when (OfflineSyncService.IsConnectionFailure(ex)) { suggestions = []; }
+        catch (Exception ex) { error = ex.Message; }
     }
 
-    private async Task FlushQueueAsync()
+    private async Task<bool> RunQueueableAsync(string uri, object? body, Func<Task> send)
     {
-        foreach (var mutation in await Queue.GetAsync())
-        {
-            try { await Api.SendQueuedAsync(mutation); await Queue.RemoveAsync(mutation.OperationId); }
-            catch { State.SetConnectivity(true, (await Queue.GetAsync()).Count); return; }
-        }
-        State.SetConnectivity(false, 0);
+        error = null;
+        try { await Sync.ExecuteAsync(uri, body, send); }
+        catch (Exception ex) { error = ex.Message; return false; }
+        pending = await Sync.GetPendingAsync();
+        return true;
     }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        reference = DotNetObjectReference.Create(this);
+        await JS.InvokeVoidAsync("yalaConnectivity.watch", reference);
+    }
+
+    [JSInvokable]
+    public async Task Reconnected() { await RetryPendingAsync(); await InvokeAsync(StateHasChanged); }
+    private async Task RetryPendingAsync()
+    {
+        try { await Sync.FlushAsync(); await TryLoadAsync(); }
+        catch (Exception ex) { error = ex.Message; }
+        pending = await Sync.GetPendingAsync();
+    }
+    private async Task RetryAsync(Guid id) { await Sync.RetryAsync(id); await TryLoadAsync(); }
+    private async Task DiscardAsync(Guid id) { await Sync.DiscardAsync(id); pending = await Sync.GetPendingAsync(); }
+    private async Task DiscardLegacyAsync() { await Queue.DiscardLegacyAsync(); legacyChanges = false; }
     private string ListCountLabel() => rows.Any(x => x.IsChecked) ? $"{rows.Count(x => !x.IsChecked)}/{rows.Count} items remain" : $"{rows.Count} item{(rows.Count == 1 ? "" : "s")}";
-    private IReadOnlyList<StoreListGroup> StoreGroups() => rows.SelectMany(row => row.StorePrices.Count == 0 ? [new StoreListEntry(row, null)] : row.StorePrices.Select(price => new StoreListEntry(row, price.StoreId))).GroupBy(x => x.StoreId).Select(group => new StoreListGroup(group.Key, group.Key is Guid id ? stores.FirstOrDefault(x => x.Id == id)?.Name ?? "Store" : "Any store", group.ToList())).ToList();
+    private IReadOnlyList<StoreListGroup> StoreGroups() => ShoppingListGrouping.GroupRowsByStore(rows);
     private IReadOnlyList<StoreListGroup> FilterStoreGroups(IReadOnlyList<StoreListGroup> groups) => selectedStoreFilter == AllStoresFilter ? groups : groups.Where(group => StoreFilterKey(group) == selectedStoreFilter).ToArray();
     private void ApplyQueryState()
     {
@@ -158,8 +216,11 @@ else
         Navigation.NavigateTo(uri, replace: true);
     }
     private static string StoreFilterKey(StoreListGroup group) => group.StoreId?.ToString() ?? "any";
-    public void Dispose() { }
-    private sealed record StoreListEntry(ShoppingListRow Item, Guid? StoreId);
-    private sealed record StoreListGroup(Guid? StoreId, string Name, IReadOnlyList<StoreListEntry> Items);
+    public async ValueTask DisposeAsync()
+    {
+        try { await JS.InvokeVoidAsync("yalaConnectivity.unwatch"); }
+        catch (JSException) { }
+        reference?.Dispose();
+    }
     private enum ListView { Items, Stores }
 }

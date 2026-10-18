@@ -1,3 +1,5 @@
+using YALA.Client.Models;
+using HouseholdChoice = YALA.Services.HouseholdChoice;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Antiforgery;
@@ -21,7 +23,52 @@ public static class YalaApiEndpoints
         api.MapGet("/antiforgery", (HttpContext http, IAntiforgery antiforgery) => Results.Ok(new { Token = antiforgery.GetAndStoreTokens(http).RequestToken })).AllowAnonymous();
 
         var secured = api.MapGroup("/").RequireAuthorization();
+        secured.AddEndpointFilter(async (context, next) =>
+        {
+            if (context.HttpContext.Request.Headers.TryGetValue("X-Yala-User", out var queuedUser) &&
+                queuedUser.ToString() != context.HttpContext.User.FindFirstValue(ClaimTypes.NameIdentifier))
+                return Results.Forbid();
+            try { return await next(context); }
+            catch (UnauthorizedAccessException) { return Results.Forbid(); }
+            catch (ArgumentException ex) { return Results.BadRequest(ex.Message); }
+            catch (InvalidOperationException ex) { return Results.BadRequest(ex.Message); }
+        });
         secured.MapGet("/households", GetHouseholdsAsync);
+        secured.MapGet("/households/settings", async (HttpContext http, HouseholdService households, CancellationToken ct) =>
+        {
+            await SelectHouseholdAsync(http, households, ct);
+            return Results.Ok(new { Members = await households.GetMemberChoicesAsync(ct), AvailableUserNames = await households.GetAvailableUserNamesAsync(ct) });
+        });
+        secured.MapPost("/households/members", async (MemberCommand command, HttpContext http, HouseholdService households, CancellationToken ct) =>
+        {
+            await SelectHouseholdAsync(http, households, ct);
+            await households.AddMemberAsync(command.UserName, ct);
+            return Results.NoContent();
+        });
+        secured.MapDelete("/households/members/{id}", async (string id, HttpContext http, HouseholdService households, CancellationToken ct) =>
+        {
+            await SelectHouseholdAsync(http, households, ct);
+            await households.RemoveMemberAsync(id, ct);
+            return Results.NoContent();
+        });
+        secured.MapPost("/households/categories", async (CategoryCommand command, HttpContext http, HouseholdService households, CancellationToken ct) =>
+        {
+            await SelectHouseholdAsync(http, households, ct);
+            await households.SaveCategoryAsync(command.Id, command.Name, ct);
+            return Results.NoContent();
+        });
+        secured.MapDelete("/households/categories/{id:guid}", async (Guid id, HttpContext http, HouseholdService households, CancellationToken ct) =>
+        {
+            await SelectHouseholdAsync(http, households, ct);
+            await households.DeleteCategoryAsync(id, ct);
+            return Results.NoContent();
+        });
+        secured.MapPost("/households/categories/move", async (CategoryMoveCommand command, HttpContext http, HouseholdService households, CancellationToken ct) =>
+        {
+            await SelectHouseholdAsync(http, households, ct);
+            await households.MoveCategoryAsync(command.Id, command.Direction, ct);
+            return Results.NoContent();
+        });
         secured.MapPost("/households/switch", SwitchHouseholdAsync);
         secured.MapPost("/households/default", MakeDefaultHouseholdAsync);
         secured.MapPost("/households/create", CreateHouseholdAsync);
@@ -92,7 +139,7 @@ public static class YalaApiEndpoints
         var user = userId is null ? null : await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.Id == userId, cancellationToken);
         SelectRequestedHousehold(http, households);
         var snapshot = await GetHouseholdSnapshotAsync(households, cancellationToken);
-        return Results.Ok(new { IsAuthenticated = true, RequiresSetup = requiresSetup, UserName = user?.UserName, IsAdministrator = user?.IsAdministrator == true, Households = snapshot });
+        return Results.Ok(new { UserId = userId, IsAuthenticated = true, RequiresSetup = requiresSetup, UserName = user?.UserName, IsAdministrator = user?.IsAdministrator == true, Households = snapshot });
     }
 
     private static async Task<IResult> GetHouseholdsAsync(HttpContext http, HouseholdService households, CancellationToken cancellationToken)
@@ -237,18 +284,18 @@ public static class YalaApiEndpoints
         await SelectHouseholdAsync(http, households, cancellationToken); await catalog.DeleteAdHocItemAsync(id, cancellationToken); return Results.NoContent();
     }
 
-    private static async Task<IResult> SaveCatalogAsync(CatalogSaveCommand command, HouseholdService households, CatalogService catalog, HttpContext http, CancellationToken cancellationToken)
+    private static async Task<IResult> SaveCatalogAsync(CatalogSaveRequest command, HouseholdService households, CatalogService catalog, HttpContext http, CancellationToken cancellationToken)
     {
         await SelectHouseholdAsync(http, households, cancellationToken);
         return Results.Ok(await catalog.SaveAsync(command.Id, command.Name, command.Description, command.CategoryId, command.DefaultQuantity, cancellationToken));
     }
 
-    private static async Task<IResult> SetFavoriteAsync(CatalogFlagCommand command, HouseholdService households, CatalogService catalog, HttpContext http, CancellationToken cancellationToken)
+    private static async Task<IResult> SetFavoriteAsync(CatalogFlagRequest command, HouseholdService households, CatalogService catalog, HttpContext http, CancellationToken cancellationToken)
     {
         await SelectHouseholdAsync(http, households, cancellationToken); await catalog.SetFavoriteAsync(command.Id, command.Value, cancellationToken); return Results.NoContent();
     }
 
-    private static async Task<IResult> SetArchivedAsync(CatalogFlagCommand command, HouseholdService households, CatalogService catalog, HttpContext http, CancellationToken cancellationToken)
+    private static async Task<IResult> SetArchivedAsync(CatalogFlagRequest command, HouseholdService households, CatalogService catalog, HttpContext http, CancellationToken cancellationToken)
     {
         await SelectHouseholdAsync(http, households, cancellationToken); await catalog.SetArchivedAsync(command.Id, command.Value, cancellationToken); return Results.NoContent();
     }
@@ -263,18 +310,18 @@ public static class YalaApiEndpoints
         await SelectHouseholdAsync(http, households, cancellationToken); await catalog.RemoveAliasAsync(id, cancellationToken); return Results.NoContent();
     }
 
-    private static async Task<IResult> SaveVariantAsync(VariantCommand command, HouseholdService households, CatalogService catalog, HttpContext http, CancellationToken cancellationToken)
+    private static async Task<IResult> SaveVariantAsync(VariantSaveRequest command, HouseholdService households, CatalogService catalog, HttpContext http, CancellationToken cancellationToken)
     {
         await SelectHouseholdAsync(http, households, cancellationToken);
         var id = command.Id is Guid variantId
             ? await UpdateVariantAndReturnIdAsync(catalog, variantId, command, cancellationToken)
-            : await catalog.SaveVariantAsync(command.ItemId, command.Name, command.Brand, command.Size, command.Preferred, command.Barcode, command.StoreIdsValue, cancellationToken);
+            : await catalog.SaveVariantAsync(command.ItemId, command.Name, command.Brand, command.Size, command.Preferred, command.Barcode, command.StoreIds ?? [], cancellationToken);
         return Results.Ok(id);
     }
 
-    private static async Task<Guid> UpdateVariantAndReturnIdAsync(CatalogService catalog, Guid variantId, VariantCommand command, CancellationToken cancellationToken)
+    private static async Task<Guid> UpdateVariantAndReturnIdAsync(CatalogService catalog, Guid variantId, VariantSaveRequest command, CancellationToken cancellationToken)
     {
-        await catalog.UpdateVariantAsync(variantId, command.Name, command.Brand, command.Size, command.Preferred, command.BarcodesValue, cancellationToken);
+        await catalog.UpdateVariantAsync(variantId, command.Name, command.Brand, command.Size, command.Preferred, command.Barcodes ?? [], cancellationToken);
         return variantId;
     }
 
@@ -357,73 +404,45 @@ public static class YalaApiEndpoints
         await SelectHouseholdAsync(http, households, cancellationToken); await stores.RemoveOfferAsync(id, cancellationToken); return Results.NoContent();
     }
 
-    private static async Task<IResult> SaveOfferAsync(StoreOfferCommand command, HouseholdService households, StoreService stores, HttpContext http, CancellationToken cancellationToken)
+    private static async Task<IResult> SaveOfferAsync(StoreOfferSaveRequest command, HouseholdService households, StoreService stores, HttpContext http, CancellationToken cancellationToken)
     {
         await SelectHouseholdAsync(http, households, cancellationToken); await stores.SaveOfferAsync(command.StoreId, command.CatalogItemId, command.Aisle, command.Price, command.ProductVariantId, cancellationToken); return Results.NoContent();
     }
 
-    private static async Task<IResult> UpdateOfferAsync(StoreOfferUpdateCommand command, HouseholdService households, StoreService stores, HttpContext http, CancellationToken cancellationToken)
+    private static async Task<IResult> UpdateOfferAsync(StoreOfferUpdateRequest command, HouseholdService households, StoreService stores, HttpContext http, CancellationToken cancellationToken)
     {
         await SelectHouseholdAsync(http, households, cancellationToken); await stores.UpdateOfferAsync(command.OfferId, command.Aisle, command.Price, cancellationToken); return Results.NoContent();
     }
 
-    private static async Task<IResult> GetUsersAsync(HttpContext http, IDbContextFactory<ApplicationDbContext> dbFactory, CancellationToken cancellationToken)
+    private static async Task<IResult> GetUsersAsync(UserAdministrationService users, CancellationToken cancellationToken) =>
+        Results.Ok(await users.GetUsersAsync(cancellationToken));
+
+    private static async Task<IResult> CreateUserAsync(YALA.Client.Models.UserCreateRequest command, UserAdministrationService users, CancellationToken cancellationToken)
     {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-        if (!await IsAdministratorAsync(http, db, cancellationToken)) return Results.Forbid();
-        var users = await db.Users.AsNoTracking().OrderBy(x => x.DisplayName).ThenBy(x => x.UserName).Select(x => new { x.Id, x.UserName, x.DisplayName, x.IsAdministrator }).ToListAsync(cancellationToken);
-        var memberships = await db.HouseholdMembers.AsNoTracking().OrderBy(x => x.Household.Name).Select(x => new { x.UserId, Name = x.Household.Name }).ToListAsync(cancellationToken);
-        return Results.Ok(users.Select(user => new { user.Id, user.UserName, user.DisplayName, user.IsAdministrator, Households = memberships.Where(x => x.UserId == user.Id).Select(x => x.Name).ToList() }));
+        await users.CreateUserAsync(command.DisplayName, command.UserName, command.Password, command.HouseholdId, cancellationToken);
+        return Results.NoContent();
     }
 
-    private static async Task<IResult> CreateUserAsync(UserCreateCommand command, HttpContext http, UserManager<ApplicationUser> userManager, IDbContextFactory<ApplicationDbContext> dbFactory, HouseholdService households, CancellationToken cancellationToken)
+    private static async Task<IResult> ResetPasswordAsync(UserPasswordCommand command, UserAdministrationService users, CancellationToken cancellationToken)
     {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-        if (!await IsAdministratorAsync(http, db, cancellationToken)) return Results.Forbid();
-        var user = new ApplicationUser { UserName = command.UserName.Trim(), DisplayName = command.DisplayName.Trim() };
-        var result = await userManager.CreateAsync(user, command.Password);
-        if (!result.Succeeded) return Results.BadRequest(result.Errors.Select(x => x.Description));
-        if (command.HouseholdId is Guid householdId)
-        {
-            households.SelectHousehold(householdId);
-            await households.AddMemberAsync(user.UserName!, cancellationToken);
-        }
-        return Results.Ok(new { user.Id });
+        await users.ResetPasswordAsync(command.UserId, command.Password, cancellationToken);
+        return Results.NoContent();
     }
 
-    private static async Task<IResult> ResetPasswordAsync(UserPasswordCommand command, HttpContext http, UserManager<ApplicationUser> userManager, IDbContextFactory<ApplicationDbContext> dbFactory, CancellationToken cancellationToken)
+    private static async Task<IResult> DeleteUserAsync(string id, UserAdministrationService users, CancellationToken cancellationToken)
     {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-        if (!await IsAdministratorAsync(http, db, cancellationToken)) return Results.Forbid();
-        var user = await userManager.FindByIdAsync(command.UserId);
-        if (user is null) return Results.NotFound();
-        var token = await userManager.GeneratePasswordResetTokenAsync(user);
-        var result = await userManager.ResetPasswordAsync(user, token, command.Password);
-        return result.Succeeded ? Results.NoContent() : Results.BadRequest(result.Errors.Select(x => x.Description));
-    }
-
-    private static async Task<IResult> DeleteUserAsync(string id, HttpContext http, UserManager<ApplicationUser> userManager, IDbContextFactory<ApplicationDbContext> dbFactory, CancellationToken cancellationToken)
-    {
-        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
-        if (!await IsAdministratorAsync(http, db, cancellationToken)) return Results.Forbid();
-        var currentId = http.User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (string.Equals(currentId, id, StringComparison.Ordinal)) return Results.BadRequest("You cannot delete your own account.");
-        var user = await userManager.FindByIdAsync(id);
-        if (user is null) return Results.NotFound();
-        var result = await userManager.DeleteAsync(user);
-        return result.Succeeded ? Results.NoContent() : Results.BadRequest(result.Errors.Select(x => x.Description));
-    }
-
-    private static async Task<bool> IsAdministratorAsync(HttpContext http, ApplicationDbContext db, CancellationToken cancellationToken)
-    {
-        var id = http.User.FindFirstValue(ClaimTypes.NameIdentifier);
-        return id is not null && await db.Users.AnyAsync(x => x.Id == id && x.IsAdministrator, cancellationToken);
+        await users.DeleteUserAsync(id, cancellationToken);
+        return Results.NoContent();
     }
 
     private static async Task SelectHouseholdAsync(HttpContext http, HouseholdService households, CancellationToken cancellationToken)
     {
         SelectRequestedHousehold(http, households);
-        if (await households.GetCurrentAsync(cancellationToken) is null) throw new InvalidOperationException("Choose a household first.");
+        var current = await households.GetCurrentAsync(cancellationToken);
+        if (current is null) throw new InvalidOperationException("Choose a household first.");
+        if (http.Request.Headers.TryGetValue("X-Yala-Household", out var requested) &&
+            (!Guid.TryParse(requested, out var id) || current.HouseholdId != id))
+            throw new UnauthorizedAccessException("That household is unavailable.");
     }
 
     private static void SelectRequestedHousehold(HttpContext http, HouseholdService households)
@@ -435,31 +454,4 @@ public static class YalaApiEndpoints
         if (Guid.TryParse(raw, out var selected)) households.SelectHousehold(selected);
     }
 
-    private sealed record HouseholdCommand(Guid HouseholdId);
-    private sealed record HouseholdCreateCommand(string Name, bool MakeDefault);
-    private sealed record HouseholdNameCommand(string Name);
-    private sealed record ListItemCommand(Guid CatalogItemId);
-    private sealed record QuickAddCommand(string Name);
-    private sealed record ListRowCommand(Guid Id);
-    private sealed record QuantityCommand(Guid Id, decimal Delta);
-    private sealed record AssignStoreCommand(Guid Id, Guid? StoreId);
-    private sealed record CatalogSaveCommand(Guid? Id, string Name, string? Description, Guid? CategoryId, decimal DefaultQuantity);
-    private sealed record CatalogFlagCommand(Guid Id, bool Value);
-    private sealed record AliasCommand(Guid ItemId, string Alias);
-    private sealed record PromoteCommand(Guid ShoppingListItemId);
-    private sealed record VariantCommand(Guid? Id, Guid ItemId, string Name, string? Brand, string? Size, bool Preferred, string? Barcode, List<string>? Barcodes, List<Guid>? StoreIds)
-    {
-        public IReadOnlyList<string> BarcodesValue => Barcodes ?? [];
-        public IReadOnlyList<Guid> StoreIdsValue => StoreIds ?? [];
-    }
-    private sealed record VariantStoreCommand(Guid VariantId, Guid StoreId, bool Available);
-    private sealed record ItemStoreCommand(Guid ItemId, Guid StoreId, bool Available);
-    private sealed record StoreCommand(Guid? Id, string Name);
-    private sealed record StoreActiveCommand(Guid Id, bool Active);
-    private sealed record StoreMoveCommand(Guid Id, int Direction);
-    private sealed record PreferredCommand(Guid OfferId, bool Preferred);
-    private sealed record StoreOfferCommand(Guid StoreId, Guid CatalogItemId, string? Aisle, decimal? Price, Guid? ProductVariantId);
-    private sealed record StoreOfferUpdateCommand(Guid OfferId, string? Aisle, decimal? Price);
-    private sealed record UserCreateCommand(string DisplayName, string UserName, string Password, Guid? HouseholdId);
-    private sealed record UserPasswordCommand(string UserId, string Password);
 }

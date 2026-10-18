@@ -1,4 +1,4 @@
-using YALA.Services;
+using YALA.Client.Models;
 
 namespace YALA.Tests;
 
@@ -21,7 +21,7 @@ public sealed class StoreListGroupingTests
             ]
         };
 
-        var groups = ShoppingListService.GroupRowsByStore([row]);
+        var groups = ShoppingListGrouping.GroupRowsByStore([row]);
 
         Assert.Collection(groups,
             group =>
@@ -54,7 +54,7 @@ public sealed class StoreListGroupingTests
             AssignedStoreName = "Walmart"
         };
 
-        var group = Assert.Single(ShoppingListService.GroupRowsByStore([row]));
+        var group = Assert.Single(ShoppingListGrouping.GroupRowsByStore([row]));
 
         Assert.Equal("Walmart", group.Name);
         Assert.Equal(storeId, group.StoreId);
