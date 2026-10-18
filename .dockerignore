@@ -9,3 +9,21 @@ tests/
 backups/
 src/YALA/Data/*.db*
 README.md
+
+# Dockhand direct-host staging can retain deleted files. Keep the retired UI
+# out of the build context even when its staging cleanup reports success.
+src/YALA/Components/GroceryItemContent.razor
+src/YALA/Components/GroceryRow.razor
+src/YALA/Components/ImageLightbox.razor
+src/YALA/Components/StoreMark.razor
+src/YALA/Components/Layout/HouseholdSwitcher.razor
+src/YALA/Components/Pages/Catalog.razor
+src/YALA/Components/Pages/Home.razor
+src/YALA/Components/Pages/Households.razor
+src/YALA/Components/Pages/Item.razor
+src/YALA/Components/Pages/StoreDetails.razor
+src/YALA/Components/Pages/Stores.razor
+src/YALA/Components/Pages/Users.razor
+src/YALA.Client/Components/Layout/MainLayout.razor
+src/YALA.Client/Components/Routes.razor
+src/YALA.Client/RedirectToLogin.razor
