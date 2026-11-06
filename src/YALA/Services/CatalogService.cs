@@ -86,7 +86,7 @@ public sealed class CatalogService(IDbContextFactory<ApplicationDbContext> dbCon
 
         var entries = await items.OrderBy(x => x.IsArchived).ThenBy(x => x.Category == null ? int.MaxValue : x.Category.SortOrder).ThenBy(x => x.Name)
             .Select(x => new CatalogEntry(x.Id, x.Name, x.Description, x.Category == null ? null : x.Category.Name, x.DefaultQuantity, x.IsFavorite, x.IsArchived,
-                x.StoreOffers.Where(o => o.IsAvailable).Select(o => o.StoreId).Distinct().Count(), db.PurchaseHistory.Where(p => p.HouseholdId == household.HouseholdId && p.CatalogItemId == x.Id)
+                x.StoreOffers.Where(o => o.IsAvailable && o.Store.IsActive && (o.ProductVariant == null || !o.ProductVariant.IsArchived)).Select(o => o.StoreId).Distinct().Count(), db.PurchaseHistory.Where(p => p.HouseholdId == household.HouseholdId && p.CatalogItemId == x.Id)
                     .OrderByDescending(p => p.PurchasedAt).Select(p => (DateTimeOffset?)p.PurchasedAt).FirstOrDefault(), x.ImagePath, Array.Empty<ExactProductSummary>(), Array.Empty<StorePrice>()))
             .ToListAsync(cancellationToken);
 
@@ -173,7 +173,7 @@ public sealed class CatalogService(IDbContextFactory<ApplicationDbContext> dbCon
     public async Task AddAliasAsync(Guid itemId, string alias, CancellationToken cancellationToken = default)
     {
         var household = await RequireHouseholdAsync(cancellationToken);
-        var cleanAlias = alias.Trim();
+        var cleanAlias = alias?.Trim() ?? "";
         if (cleanAlias.Length is < 1 or > 100) throw new ArgumentException("Alias must be between 1 and 100 characters.");
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         if (!await db.CatalogItems.AnyAsync(x => x.Id == itemId && x.HouseholdId == household.HouseholdId, cancellationToken))
@@ -404,9 +404,9 @@ public sealed class CatalogService(IDbContextFactory<ApplicationDbContext> dbCon
         var household = await householdService.GetCurrentAsync(cancellationToken)
             ?? throw new InvalidOperationException("Choose a household before editing catalog items.");
         var cleanName = name?.Trim() ?? "";
-        if (cleanName.Length is < 1 or > 120 || defaultQuantity <= 0)
+        if (cleanName.Length is < 1 or > 120 || defaultQuantity < 0.25m)
         {
-            throw new ArgumentException("Enter an item name and a quantity greater than zero.");
+            throw new ArgumentException("Enter an item name of 1 to 120 characters and a quantity of at least 0.25.");
         }
 
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);

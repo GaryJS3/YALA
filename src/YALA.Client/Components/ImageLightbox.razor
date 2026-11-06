@@ -1,10 +1,11 @@
+@inject IJSRuntime JS
 @if (!string.IsNullOrWhiteSpace(Src))
 {
     <button type="button" class="image-lightbox-trigger @TriggerClass" aria-label="View full-size image of @Alt" @onclick="Open" @onclick:stopPropagation="true"><img src="@Src" alt="@Alt" loading="@Loading" /></button>
 }
 @if (isOpen)
 {
-    <div class="image-lightbox" role="dialog" aria-modal="true" tabindex="-1" @onclick="Close" @onkeydown="HandleKeyDown"><button type="button" class="image-lightbox-close" aria-label="Close" @onclick="Close">×</button><div class="image-lightbox-content" @onclick:stopPropagation="true"><img src="@Src" alt="@Alt" /></div></div>
+    <dialog @ref="dialog" class="image-lightbox" aria-label="Full-size image of @Alt" @onclick="CloseAsync" @onclose="Closed"><button type="button" class="image-lightbox-close" aria-label="Close" autofocus @onclick="CloseAsync" @onclick:stopPropagation="true">×</button><div class="image-lightbox-content" @onclick:stopPropagation="true"><img src="@Src" alt="@Alt" /></div></dialog>
 }
 @code {
     [Parameter, EditorRequired] public string Src { get; set; } = "";
@@ -12,7 +13,15 @@
     [Parameter] public string? TriggerClass { get; set; }
     [Parameter] public string Loading { get; set; } = "eager";
     private bool isOpen;
-    private void Open() => isOpen = true;
-    private void Close() => isOpen = false;
-    private void HandleKeyDown(KeyboardEventArgs args) { if (args.Key == "Escape") Close(); }
+    private bool showPending;
+    private ElementReference dialog;
+    private void Open() => isOpen = showPending = true;
+    private void Closed() => isOpen = false;
+    private async Task CloseAsync() => await JS.InvokeVoidAsync("yalaDialog.close", dialog);
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!showPending) return;
+        showPending = false;
+        await JS.InvokeVoidAsync("yalaDialog.show", dialog);
+    }
 }

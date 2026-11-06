@@ -155,8 +155,16 @@
         if (current is null) { confirmArchive = false; editingCategoryId = null; categoryName = string.Empty; }
     }
 
-    private async Task SwitchAsync(Guid id) { await Api.SwitchHouseholdAsync(id); Navigation.NavigateTo("/households", forceLoad: true); }
-    private async Task MakeDefaultAsync(Guid id) { await Api.MakeDefaultHouseholdAsync(id); await LoadAsync(); }
+    private async Task SwitchAsync(Guid id)
+    {
+        try { await Api.SwitchHouseholdAsync(id); Navigation.NavigateTo("/households", forceLoad: true); }
+        catch (Exception ex) { error = ex.Message; }
+    }
+    private async Task MakeDefaultAsync(Guid id)
+    {
+        try { await Api.MakeDefaultHouseholdAsync(id); error = null; await LoadAsync(); }
+        catch (Exception ex) { error = ex.Message; }
+    }
 
     private async Task RenameHouseholdAsync()
     {
@@ -185,7 +193,8 @@
 
     private async Task MoveCategoryAsync(Guid id, int direction)
     {
-        await Api.MoveCategoryAsync(id, direction); await LoadAsync();
+        try { await Api.MoveCategoryAsync(id, direction); error = null; await LoadAsync(); }
+        catch (Exception ex) { error = ex.Message; }
     }
 
     private async Task ArchiveHouseholdAsync()
@@ -197,7 +206,7 @@
     private async Task RestoreHouseholdAsync(Guid id)
     {
         try { await Api.RestoreHouseholdAsync(id); error = null; message = "Household restored."; await LoadAsync(); }
-        catch (ApiException ex) { error = ex.Message; }
+        catch (Exception ex) { error = ex.Message; }
     }
 
     private async Task CreateHouseholdAsync()

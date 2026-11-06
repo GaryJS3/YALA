@@ -108,7 +108,7 @@ public sealed class ActiveClientComponentTests
         }
         else
         {
-            Assert.DoesNotContain("Remove Milk", html);
+            Assert.DoesNotContain("aria-label=\"Remove Milk\"", html);
         }
         if (offline) Assert.Single(await fixture.Queue.GetAsync());
     }

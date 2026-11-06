@@ -66,6 +66,7 @@ builder.Services.AddScoped<StoreService>();
 builder.Services.AddScoped<ImageService>();
 builder.Services.AddScoped<ProductLookupService>();
 builder.Services.AddScoped<UserAdministrationService>();
+builder.Services.AddScoped<AccountDeletionService>();
 builder.Services.AddSingleton<ShoppingListChangeNotifier>();
 builder.Services.AddHttpClient("OpenFacts", client =>
 {
@@ -158,6 +159,12 @@ else
 app.UseWhen(context => !context.Request.Path.StartsWithSegments("/api"), branch =>
     branch.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true));
 app.UseAntiforgery();
+app.Use(async (context, next) =>
+{
+    if (context.Request.Path.StartsWithSegments("/api") || context.Request.Path.StartsWithSegments("/images"))
+        context.Response.Headers.CacheControl = "no-store";
+    await next(context);
+});
 
 app.MapStaticAssets();
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "YALA" })).AllowAnonymous();

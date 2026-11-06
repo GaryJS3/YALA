@@ -20,7 +20,14 @@
 }
 else if (session is null || !session.IsAuthenticated)
 {
+    @if (error is not null || State.IsOffline)
+    {
+        <section class="empty-state"><h1>Your list could not be opened.</h1><p>Reconnect and try again to load your household.</p><button class="button button-primary" @onclick="OpenListAsync">Try again</button></section>
+    }
+    else
+    {
     <section class="empty-state welcome-empty"><div class="empty-illustration" aria-hidden="true">✳</div><p class="eyebrow">WELCOME TO YALA</p><h1>Make the next grocery run<br />a little easier.</h1><p class="muted-copy">Sign in to open your household list.</p><a class="button button-primary" href="/Account/Login">Sign in <span aria-hidden="true">↗</span></a></section>
+    }
 }
 else if (session.Households.Current is null)
 {
@@ -39,14 +46,21 @@ else
     {
     <div class="connection-banner" role="status">@(State.IsOffline ? "Offline" : "Online") · @pending.Count changes waiting <button class="text-button" @onclick="RetryPendingAsync">Sync now</button></div>
     }
+    @if (pending.Any(x => x.Error is null))
+    {
+        <details class="pending-changes"><summary>Changes saved on this device (@pending.Count(x => x.Error is null))</summary>
+            <p>These changes will appear in the list after syncing. You can keep adding items while offline.</p>
+            <ul>@foreach (var change in pending.Where(x => x.Error is null)) { <li>@PendingChangeDescription.Describe(change, rows)</li> }</ul>
+        </details>
+    }
     @foreach (var mutation in pending.Where(x => x.Error is not null))
     {
-        <div class="notice error" role="alert">A saved change was rejected: @mutation.Error
+        <div class="notice error" role="alert">@PendingChangeDescription.Describe(mutation, rows): @mutation.Error
             <button class="text-button" @onclick="() => RetryAsync(mutation.OperationId)">Retry</button>
             <button class="text-button" @onclick="() => DiscardAsync(mutation.OperationId)">Discard</button>
         </div>
     }
-    <section class="quick-add-panel" aria-label="Quick add an item"><div class="quick-add-title"><span class="plus-disc">+</span><span>Add to the list</span><span class="quick-hint">Type an item, or pick a regular</span></div><div class="quick-entry"><span class="search-mark" aria-hidden="true">⌕</span><input @bind="query" @bind:event="oninput" @bind:after="LoadSuggestionsSafelyAsync" @onkeydown="HandleQuickAddKeyAsync" placeholder="Milk, apples, the good coffee…" aria-label="Search or create a grocery item" autocomplete="off" />@if (!string.IsNullOrWhiteSpace(query)) { <button type="button" class="button button-primary add-query-button" @onclick="QuickAddTypedAsync">Add <span>↵</span></button> }</div>
+    <section class="quick-add-panel" aria-label="Quick add an item"><div class="quick-add-title"><span class="plus-disc">+</span><span>Add to the list</span><span class="quick-hint">Type an item, or pick a regular</span></div><div class="quick-entry"><span class="search-mark" aria-hidden="true">⌕</span><input @bind="query" @bind:event="oninput" @bind:after="LoadSuggestionsSafelyAsync" @onkeydown="HandleQuickAddKeyAsync" placeholder="Milk, apples, the good coffee…" aria-label="Search or create a grocery item" maxlength="120" autocomplete="off" />@if (!string.IsNullOrWhiteSpace(query)) { <button type="button" class="button button-primary add-query-button" disabled="@addingTypedItem" @onclick="QuickAddTypedAsync">Add <span>↵</span></button> }</div>
         @if (suggestions.Count > 0) { <div class="quick-picks"><span class="quick-picks-label">MATCHING ITEMS</span><div class="pick-list">@foreach (var suggestion in suggestions) { <button type="button" class="pick-chip" @onclick="() => AddItemAsync(suggestion.Id)">@if (suggestion.IsFavorite) { <span class="favorite-star">★</span> }@suggestion.Name <span class="pick-plus">+</span></button> }</div></div> }
     </section>
     <section class="list-board"><div class="list-toolbar"><div class="list-title-group"><h2>On the list</h2><span class="item-total">@ListCountLabel(visibleRows)</span></div><div class="toolbar-actions">@if (view == ListView.Stores && groups.Count > 1) { <label class="store-view-filter"><span>Show</span><select value="@(groups.Any(group => StoreFilterKey(group) == selectedStoreFilter) ? selectedStoreFilter : AllStoresFilter)" @onchange="StoreFilterChanged" aria-label="Show one store"><option value="@AllStoresFilter">All stores</option>@foreach (var group in groups) { <option value="@StoreFilterKey(group)">@group.Name (@group.Items.Count)</option> }</select></label> }<div class="view-switch" role="group" aria-label="List view"><button type="button" class="@(view == ListView.Items ? "selected" : "")" @onclick="() => SetView(ListView.Items)">Items</button><button type="button" class="@(view == ListView.Stores ? "selected" : "")" @onclick="() => SetView(ListView.Stores)">Stores</button></div>@if (visibleRows.Any(x => x.IsChecked)) { <button class="text-button clear-button" type="button" disabled="@clearingChecked" @onclick="ClearCheckedAsync">@(clearingChecked ? "Clearing…" : "Clear checked") <span>@visibleRows.Count(x => x.IsChecked)</span></button> }</div></div>
@@ -114,6 +128,8 @@ else
 
     private async Task OpenListAsync()
     {
+        loading = true;
+        error = null;
         try
         {
             legacyChanges = await Queue.HasLegacyChangesAsync();
@@ -143,7 +159,12 @@ else
             State.SetConnectivity(true, (await Sync.GetPendingAsync()).Count);
         }
         catch (Exception ex) { error = ex.Message; }
-        finally { pending = await Sync.GetPendingAsync(); loading = false; }
+        finally
+        {
+            try { pending = await Sync.GetPendingAsync(); }
+            catch (Exception ex) { error = ex.Message; }
+            loading = false;
+        }
     }
 
     private async Task LoadAsync()
@@ -180,15 +201,21 @@ else
     private Task QuickAddTypedAsync()
     {
         var name = query.Trim();
-        if (name.Length == 0) return Task.CompletedTask;
+        if (name.Length == 0 || addingTypedItem) return Task.CompletedTask;
+        addingTypedItem = true;
         return UpdateListAsync(async () =>
         {
-            if (!await RunQueueableAsync("api/list/quick-add", new QuickAddCommand(name))) return;
-            if (string.Equals(query.Trim(), name, StringComparison.Ordinal)) query = "";
-            await TryLoadAsync();
-            await LoadSuggestionsSafelyAsync();
+            try
+            {
+                if (!await RunQueueableAsync("api/list/quick-add", new QuickAddCommand(name))) return;
+                if (string.Equals(query.Trim(), name, StringComparison.Ordinal)) query = "";
+                await TryLoadAsync();
+                await LoadSuggestionsSafelyAsync();
+            }
+            finally { addingTypedItem = false; }
         });
     }
+    private bool addingTypedItem;
     private async Task HandleQuickAddKeyAsync(KeyboardEventArgs args) { if (args.Key == "Enter") await QuickAddTypedAsync(); }
     private Task ToggleAsync(Guid id) => UpdateListAsync(() => SaveAndRefreshAsync("api/list/toggle", new ListRowCommand(id)));
     private Task ChangeQuantityAsync((Guid Id, decimal Delta) change) => UpdateListAsync(() => SaveAndRefreshAsync("api/list/quantity", new QuantityCommand(change.Id, change.Delta)));

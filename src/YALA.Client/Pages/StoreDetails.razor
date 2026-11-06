@@ -49,7 +49,7 @@ else
         @if (details.Offers.Count == 0) { <p class="muted-copy offer-empty">Nothing tracked here yet. Add a catalog item above; store-specific prices are optional.</p> }
         else
         {
-            <div class="data-list store-offer-list">@foreach (var offer in details.Offers) { var draft = GetOfferDraft(offer); <article class="data-row @(editingOffers ? "store-offer-edit-row" : "")" @key="offer.Id"><div class="data-row-main"><strong>@offer.ItemName</strong><small>@(offer.ProductName ?? "Any product")@(editingOffers ? "" : $" · {(offer.Aisle ?? "Aisle not noted")} · {(offer.LastPrice is decimal p ? p.ToString("C") : "No price yet")}")</small></div>@if (editingOffers) { <div class="offer-edit-field form-field"><label for="offer-location-@offer.Id">Location</label><input id="offer-location-@offer.Id" @bind="draft.Aisle" @bind:event="oninput" placeholder="Aisle or section" /></div><div class="offer-edit-field form-field"><label for="offer-price-@offer.Id">Price</label><input id="offer-price-@offer.Id" @bind="draft.PriceText" @bind:event="oninput" inputmode="decimal" placeholder="0.00" /></div><button type="button" class="button button-primary offer-row-save" disabled="@(offerSavingId == offer.Id)" @onclick="() => SaveOfferEditAsync(offer)">@(offerSavingId == offer.Id ? "Saving…" : "Save")</button> } else { <span class="offer-last">@(offer.LastPrice is decimal last ? last.ToString("C") : "—")</span><button type="button" class="text-button remove-offer-action" @onclick="() => RemoveOfferAsync(offer.Id)">Remove</button> }</article> }</div>
+            <div class="data-list store-offer-list">@foreach (var offer in details.Offers) { var draft = GetOfferDraft(offer); <article class="data-row @(editingOffers ? "store-offer-edit-row" : "")" @key="offer.Id"><div class="data-row-main"><strong>@offer.ItemName</strong><small>@(offer.ProductName ?? "Any product")@(editingOffers ? "" : $" · {(offer.Aisle ?? "Aisle not noted")} · {(offer.LastPrice is decimal p ? p.ToString("C") : "No price yet")}")</small></div>@if (editingOffers) { <div class="offer-edit-field form-field"><label for="offer-location-@offer.Id">Location</label><input id="offer-location-@offer.Id" @bind="draft.Aisle" @bind:event="oninput" placeholder="Aisle or section" /></div><div class="offer-edit-field form-field"><label for="offer-price-@offer.Id">Price</label><input id="offer-price-@offer.Id" @bind="draft.PriceText" @bind:event="oninput" inputmode="decimal" placeholder="0.00" /></div><button type="button" class="button button-primary offer-row-save" disabled="@(offerSavingId is not null)" @onclick="() => SaveOfferEditAsync(offer)">@(offerSavingId == offer.Id ? "Saving…" : "Save")</button> } else { <span class="offer-last">@(offer.LastPrice is decimal last ? last.ToString("C") : "—")</span><button type="button" class="text-button remove-offer-action" @onclick="() => RemoveOfferAsync(offer.Id)">Remove</button> }</article> }</div>
         }
     </section>
 }
@@ -64,8 +64,22 @@ else
     private Guid? catalogItemId;
     private Guid? offerSavingId;
     private readonly Dictionary<Guid, OfferEditModel> offerEdits = [];
+    private long loadVersion;
+    private Guid? loadedId;
 
-    protected override Task OnParametersSetAsync() => RetryLoadAsync();
+    protected override Task OnParametersSetAsync()
+    {
+        if (loadedId != Id)
+        {
+            loadedId = Id;
+            details = null;
+            editing = editingOffers = false;
+            offerEdits.Clear();
+            catalogItemId = null;
+            aisle = priceText = "";
+        }
+        return RetryLoadAsync();
+    }
 
     private async Task RetryLoadAsync()
     {
@@ -77,17 +91,21 @@ else
 
     private async Task LoadAsync()
     {
+        var version = ++loadVersion;
         loading = true;
         try
         {
-            details = await Api.GetStoreDetailsAsync(Id);
+            var snapshot = await Api.GetStoreDetailsAsync(Id);
+            if (version != loadVersion) return;
+            details = snapshot;
             if (details is not null && !editing)
             {
                 editName = details.Store.Name;
                 editActive = details.Store.IsActive;
             }
         }
-        finally { loading = false; }
+        catch (Exception) when (version != loadVersion) { }
+        finally { if (version == loadVersion) loading = false; }
     }
 
     private void BeginEdit()
@@ -130,13 +148,18 @@ else
 
     private async Task SaveAsync()
     {
+        if (saving) return;
         if (string.IsNullOrWhiteSpace(editName)) { error = true; message = "Enter a store name."; return; }
+        var storeId = Id;
+        var storeName = editName;
+        var active = editActive;
         saving = true;
         error = false;
         try
         {
-            await Api.SaveStoreAsync(Id, editName);
-            await Api.SetStoreActiveAsync(Id, editActive);
+            await Api.SaveStoreAsync(storeId, storeName);
+            await Api.SetStoreActiveAsync(storeId, active);
+            if (Id != storeId) return;
             await LoadAsync();
             editing = false;
             message = "Store changes saved.";
@@ -194,6 +217,7 @@ else
 
     private async Task SaveOfferEditAsync(StoreOfferSummary offer)
     {
+        if (offerSavingId is not null) return;
         var draft = GetOfferDraft(offer);
         decimal? price = null;
         if (!string.IsNullOrWhiteSpace(draft.PriceText))
@@ -223,6 +247,7 @@ else
 
     private async Task AddOfferAsync()
     {
+        if (offerSaving) return;
         if (catalogItemId is not Guid itemId) { error = true; message = "Choose a catalog item first."; return; }
         decimal? price = null;
         if (!string.IsNullOrWhiteSpace(priceText))

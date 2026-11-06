@@ -18,9 +18,14 @@ public sealed class OfflineQueue(IJSRuntime js)
         try
         {
             var json = await js.InvokeAsync<string?>("localStorage.getItem", StorageKey);
-            return string.IsNullOrWhiteSpace(json) ? [] : JsonSerializer.Deserialize<List<QueuedMutation>>(json, Options) ?? [];
+            if (string.IsNullOrWhiteSpace(json)) return [];
+            return JsonSerializer.Deserialize<List<QueuedMutation>>(json, Options)
+                ?? throw new JsonException("The saved queue is not a list.");
         }
-        catch (Exception ex) when (ex is JSException or JsonException) { return []; }
+        catch (Exception ex) when (ex is JSException or JsonException)
+        {
+            throw new InvalidOperationException("Saved changes could not be read from this browser. They have been kept. Do not clear browser data; try reopening YALA.", ex);
+        }
     }
 
     public Task EnqueueAsync(QueuedMutation mutation) =>

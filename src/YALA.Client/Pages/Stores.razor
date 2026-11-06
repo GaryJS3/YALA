@@ -6,19 +6,27 @@
 
 <PageTitle>Stores · YALA</PageTitle>
 <section class="page-heading"><div><p class="eyebrow">WHERE YOU SHOP</p><h1>Stores</h1><p class="heading-subtitle">Keep store availability and prices close to the list.</p></div></section>
-<section class="content-card"><div class="store-editor"><input @bind="newName" @bind:event="oninput" placeholder="New store name" aria-label="New store name" /><button type="button" class="button button-primary" disabled="@saving" @onclick="SaveNewAsync">@(saving ? "Adding…" : "Add store") <span>+</span></button></div>@if (!string.IsNullOrWhiteSpace(error)) { <p class="notice error" role="alert">@error</p> }<div class="data-list store-list">@foreach (var store in stores) { <article class="data-row store-list-row" @key="store.Id"><a class="store-list-link" href="/stores/@store.Id" aria-label="Open @store.Name"><StoreMark Name="@store.Name" ImagePath="@store.ImagePath" ShowName="true" /></a><div class="data-row-main"><small>@store.OfferCount offers · @(store.IsActive ? "Active" : "Inactive")</small></div><button type="button" class="button button-outline" @onclick="() => OpenStore(store.Id)">Open <span>→</span></button></article> }</div></section>
+<section class="content-card"><div class="store-editor"><input @bind="newName" @bind:event="oninput" placeholder="New store name" maxlength="80" aria-label="New store name" /><button type="button" class="button button-primary" disabled="@saving" @onclick="SaveNewAsync">@(saving ? "Adding…" : "Add store") <span>+</span></button></div>@if (!string.IsNullOrWhiteSpace(error)) { <p class="notice error" role="alert">@error</p> }@if (loading) { <p role="status">Loading stores…</p> } else if (loadFailed) { <button type="button" class="button button-outline" @onclick="LoadAsync">Try again</button> } else if (stores.Count == 0) { <div class="catalog-empty"><h2>Add your first store.</h2><p>Enter a store name above to track availability and prices.</p></div> }<div class="data-list store-list">@foreach (var store in stores) { <article class="data-row store-list-row" @key="store.Id"><a class="store-list-link" href="/stores/@store.Id" aria-label="Open @store.Name"><StoreMark Name="@store.Name" ImagePath="@store.ImagePath" ShowName="true" /></a><div class="data-row-main"><small>@store.OfferCount offers · @(store.IsActive ? "Active" : "Inactive")</small></div><button type="button" class="button button-outline" @onclick="() => OpenStore(store.Id)">Open <span>→</span></button></article> }</div></section>
 
 @code {
     private List<StoreSummary> stores = [];
     private string newName = "";
     private string error = "";
-    private bool saving;
+    private bool saving, loading = true, loadFailed;
     protected override async Task OnInitializedAsync()
     {
         try { await LoadAsync(); }
         catch (Exception ex) { error = ex.Message; }
     }
-    private async Task LoadAsync() => stores = (await Api.GetStoresAsync()).ToList();
+    private async Task LoadAsync()
+    {
+        loading = true;
+        loadFailed = false;
+        error = "";
+        try { stores = (await Api.GetStoresAsync()).ToList(); }
+        catch (Exception ex) { loadFailed = true; error = ex.Message; }
+        finally { loading = false; }
+    }
     private async Task SaveNewAsync()
     {
         if (saving) return;

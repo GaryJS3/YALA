@@ -2,6 +2,8 @@
 @inject ClientState State
 @inject NavigationManager Navigation
 
+@if (error is not null) { <span class="notice error" role="alert">@error</span> }
+
 @if (households.Count > 0)
 {
     <label class="household-switcher">
@@ -34,6 +36,7 @@ else if (householdsLoaded)
 @code {
     private List<HouseholdChoice> households = [];
     private bool householdsLoaded;
+    private string? error;
 
     protected override async Task OnInitializedAsync()
     {
@@ -45,15 +48,20 @@ else if (householdsLoaded)
             householdsLoaded = true;
         }
         catch (Exception ex) when (OfflineSyncService.IsConnectionFailure(ex)) { }
+        catch (Exception ex) { error = ex.Message; }
     }
 
     private async Task SwitchHouseholdAsync(ChangeEventArgs args)
     {
         if (Guid.TryParse(args.Value?.ToString(), out var id))
         {
-            await Api.SwitchHouseholdAsync(id);
-            State.SetHousehold(households.FirstOrDefault(x => x.Id == id));
-            Navigation.NavigateTo("/", forceLoad: true);
+            try
+            {
+                await Api.SwitchHouseholdAsync(id);
+                State.SetHousehold(households.FirstOrDefault(x => x.Id == id));
+                Navigation.NavigateTo("/", forceLoad: true);
+            }
+            catch (Exception ex) { error = ex.Message; }
         }
     }
 }

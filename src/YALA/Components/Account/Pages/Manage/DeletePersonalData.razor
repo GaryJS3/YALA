@@ -8,6 +8,7 @@
 @inject SignInManager<ApplicationUser> SignInManager
 @inject IdentityRedirectManager RedirectManager
 @inject ILogger<DeletePersonalData> Logger
+@inject YALA.Services.AccountDeletionService AccountDeletion
 
 <PageTitle>Delete Personal Data</PageTitle>
 
@@ -75,10 +76,14 @@
             return;
         }
 
-        var result = await UserManager.DeleteAsync(user);
-        if (!result.Succeeded)
+        try
         {
-            throw new InvalidOperationException("Unexpected error occurred deleting user.");
+            await AccountDeletion.DeleteAsync(user.Id);
+        }
+        catch (InvalidOperationException ex)
+        {
+            message = $"Error: {ex.Message}";
+            return;
         }
 
         await SignInManager.SignOutAsync();
@@ -86,7 +91,7 @@
         var userId = await UserManager.GetUserIdAsync(user);
         Logger.LogInformation("User with ID '{UserId}' deleted themselves.", userId);
 
-        RedirectManager.RedirectToCurrentPage();
+        RedirectManager.RedirectTo("/Account/Login");
     }
 
     private sealed class InputModel

@@ -1,14 +1,41 @@
+window.yalaDialog = {
+    show(dialog) { if (!dialog.open) dialog.showModal(); },
+    close(dialog) { if (dialog.open) dialog.close(); }
+};
+
 window.yalaConnectivity = (() => {
     let listener;
+    let timer;
+    let stop;
     return {
         watch(reference) {
-            if (listener) window.removeEventListener('online', listener);
-            listener = () => reference.invokeMethodAsync('Reconnected').catch(() => {});
+            stop?.();
+            let refreshing = false;
+            listener = async () => {
+                if (refreshing || document.visibilityState === 'hidden' || navigator.onLine === false) return;
+                refreshing = true;
+                try { await reference.invokeMethodAsync('Reconnected'); }
+                catch { /* The component may have been disposed during a refresh. */ }
+                finally { refreshing = false; }
+            };
             window.addEventListener('online', listener);
+            window.addEventListener('focus', listener);
+            document.addEventListener('visibilitychange', listener);
+            timer = window.setInterval(listener, 15000);
+            const currentListener = listener;
+            const currentTimer = timer;
+            stop = () => {
+                window.removeEventListener('online', currentListener);
+                window.removeEventListener('focus', currentListener);
+                document.removeEventListener('visibilitychange', currentListener);
+                window.clearInterval(currentTimer);
+            };
         },
         unwatch() {
-            if (listener) window.removeEventListener('online', listener);
+            stop?.();
+            stop = undefined;
             listener = undefined;
+            timer = undefined;
         }
     };
 })();
@@ -16,10 +43,9 @@ window.yalaConnectivity = (() => {
 window.yalaOfflineQueue = {
     update(key, id, replacement) {
         const update = () => {
-            let pending;
-            try { pending = JSON.parse(localStorage.getItem(key)); }
-            catch (error) { if (!(error instanceof SyntaxError)) throw error; }
-            if (!Array.isArray(pending)) pending = [];
+            const saved = localStorage.getItem(key);
+            const pending = saved === null ? [] : JSON.parse(saved);
+            if (!Array.isArray(pending)) throw new Error('Saved changes could not be read. The original data has been kept.');
             const index = pending.findIndex(change => change?.operationId === id);
             if (replacement === null) {
                 if (index < 0) return;

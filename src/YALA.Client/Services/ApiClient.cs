@@ -15,8 +15,14 @@ public sealed class ApiClient(HttpClient http, ClientState state, IJSRuntime js)
     public async Task<SessionSnapshot?> GetSessionAsync(CancellationToken cancellationToken = default)
     {
         using var response = await SendCoreAsync(HttpMethod.Get, "api/session", null, cancellationToken);
-        if (response.StatusCode == HttpStatusCode.Unauthorized) return null;
-        response.EnsureSuccessStatusCode();
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            state.SetUser(null);
+            state.SetHousehold(null);
+            await js.InvokeVoidAsync("sessionStorage.removeItem", "yala.household");
+            return null;
+        }
+        await EnsureSuccessAsync(response, cancellationToken);
         var session = await response.Content.ReadFromJsonAsync<SessionSnapshot>(JsonOptions, cancellationToken);
         state.SetUser(session?.UserId);
         state.SetHousehold(session?.Households.Current);
@@ -259,8 +265,28 @@ public sealed class ApiClient(HttpClient http, ClientState state, IJSRuntime js)
     private static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
         if (response.IsSuccessStatusCode) return;
+        var fallback = response.StatusCode switch
+        {
+            HttpStatusCode.Unauthorized => "Your session has expired. Sign in again to continue.",
+            HttpStatusCode.Forbidden => "You no longer have access to this action or household.",
+            _ when (int)response.StatusCode >= 500 => "YALA could not complete the request. Please try again.",
+            _ => response.ReasonPhrase ?? "Request failed."
+        };
         var message = await response.Content.ReadAsStringAsync(cancellationToken);
-        throw new ApiException(response.StatusCode, string.IsNullOrWhiteSpace(message) ? response.ReasonPhrase ?? "Request failed." : message);
+        if ((int)response.StatusCode >= 500 || response.Content.Headers.ContentType?.MediaType == "text/html")
+            message = fallback;
+        else
+        {
+            try
+            {
+                using var json = JsonDocument.Parse(message);
+                message = json.RootElement.ValueKind == JsonValueKind.String ? json.RootElement.GetString() ?? fallback
+                    : json.RootElement.ValueKind == JsonValueKind.Object && json.RootElement.TryGetProperty("detail", out var detail)
+                        && detail.ValueKind == JsonValueKind.String ? detail.GetString() ?? fallback : fallback;
+            }
+            catch (JsonException) { }
+        }
+        throw new ApiException(response.StatusCode, string.IsNullOrWhiteSpace(message) ? fallback : message);
     }
 }
 

@@ -155,7 +155,7 @@ public sealed class ShoppingListService(
             }
             else
             {
-                row.Quantity += item.DefaultQuantity;
+                row.Quantity = AddQuantity(row.Quantity, item.DefaultQuantity);
                 row.IsChecked = false;
                 row.CheckedAt = null;
             }
@@ -196,7 +196,7 @@ public sealed class ShoppingListService(
             }
             else
             {
-                row.Quantity += item?.DefaultQuantity ?? 1;
+                row.Quantity = AddQuantity(row.Quantity, item?.DefaultQuantity ?? 1);
                 row.IsChecked = false;
                 row.CheckedAt = null;
             }
@@ -214,8 +214,7 @@ public sealed class ShoppingListService(
     public Task ChangeQuantityAsync(Guid shoppingListItemId, decimal delta, CancellationToken cancellationToken = default, Guid? operationId = null) =>
         MutateRowAsync(nameof(ChangeQuantityAsync), operationId, shoppingListItemId, (db, row) =>
         {
-            try { row.Quantity = Math.Max(0.25m, row.Quantity + delta); }
-            catch (OverflowException) { throw new ArgumentException("That quantity is too large."); }
+            row.Quantity = Math.Max(0.25m, AddQuantity(row.Quantity, delta));
         }, cancellationToken);
 
     public Task RemoveAsync(Guid shoppingListItemId, CancellationToken cancellationToken = default, Guid? operationId = null) =>
@@ -268,6 +267,12 @@ public sealed class ShoppingListService(
             db.ShoppingListItems.RemoveRange(checkedItems);
             return checkedItems.Count;
         }, cancellationToken);
+
+    private static decimal AddQuantity(decimal quantity, decimal delta)
+    {
+        try { return quantity + delta; }
+        catch (OverflowException) { throw new ArgumentException("That quantity is too large."); }
+    }
 
     private Task MutateRowAsync(string action, Guid? operationId, Guid rowId, Action<ApplicationDbContext, ShoppingListItem> mutation, CancellationToken cancellationToken) =>
         ApplyAsync(action, operationId, async (db, household) =>

@@ -4,7 +4,7 @@ This file tracks the product direction and implementation status. Update it when
 
 ## Shipped
 
-- [x] .NET 10 Blazor Server application with SQLite, EF Core migrations, and a single-container Docker deployment.
+- [x] .NET 10 ASP.NET Core host and Blazor WebAssembly grocery screens with SQLite, EF Core migrations, and a single-container Docker deployment.
 - [x] Persistent `/data` volume for the database, images, and Identity data-protection keys; `/health` endpoint.
 - [x] First-run account and household setup, local sign-in, and closed public registration after setup.
 - [x] Administrator user management for creating accounts, resetting passwords, and guarded account deletion.
@@ -14,11 +14,13 @@ This file tracks the product direction and implementation status. Update it when
 - [x] Household-specific stores, item availability, store assignment, aisle/offer notes, and manual price history with last and average prices.
 - [x] Item and store list views; store assignment remains distinct from store availability.
 - [x] Dedicated store detail pages for renaming, pausing, offers, preferred-store choices, and preserved price history.
-- [x] Live list-change notifications within the running application instance.
+- [x] Shared-list refresh while visible and online, including focus and reconnection refresh.
 - [x] Reverse-proxy deployment guidance, backup/restore steps, and Dockhand Git-stack deployment notes.
 - [x] Focused automated tests for shopping-list and household isolation.
 
 ## Next up
+
+See [the November 6 application review](REVIEW-2026-11-06.md) for the latest fixes, validation evidence, and follow-up opportunities.
 
 - [ ] Add broader service and UI acceptance coverage for account setup, household switching/default selection, catalog search and aliases, repeated adds, check/clear purchase history, stores, and prices.
 - [ ] Add explicit cross-household isolation coverage for catalog, variants, barcodes, stores/offers, prices, purchase history, favorites, and notifications.

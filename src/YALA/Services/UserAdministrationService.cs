@@ -37,7 +37,8 @@ public sealed class AdministratorAuthorizationHandler(IDbContextFactory<Applicat
 public sealed class UserAdministrationService(
     UserManager<ApplicationUser> userManager,
     IDbContextFactory<ApplicationDbContext> dbFactory,
-    CurrentUserContext currentUser)
+    CurrentUserContext currentUser,
+    AccountDeletionService accountDeletion)
 {
     public const string AdministratorPolicy = "Administrator";
 
@@ -70,12 +71,13 @@ public sealed class UserAdministrationService(
         CancellationToken cancellationToken = default)
     {
         await RequireAdministratorAsync(cancellationToken);
-        var normalizedDisplayName = displayName.Trim();
-        var normalizedUserName = userName.Trim();
+        var normalizedDisplayName = displayName?.Trim() ?? "";
+        var normalizedUserName = userName?.Trim() ?? "";
         if (normalizedDisplayName.Length is < 1 or > 80)
             throw new ArgumentException("Display names must be between 1 and 80 characters.", nameof(displayName));
         if (normalizedUserName.Length is < 2 or > 40)
             throw new ArgumentException("Usernames must be between 2 and 40 characters.", nameof(userName));
+        ArgumentException.ThrowIfNullOrWhiteSpace(password);
 
         var user = new ApplicationUser { DisplayName = normalizedDisplayName, UserName = normalizedUserName };
         var result = await userManager.CreateAsync(user, password);
@@ -102,6 +104,8 @@ public sealed class UserAdministrationService(
     public async Task ResetPasswordAsync(string userId, string password, CancellationToken cancellationToken = default)
     {
         await RequireAdministratorAsync(cancellationToken);
+        ArgumentException.ThrowIfNullOrWhiteSpace(userId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(password);
         var user = await userManager.FindByIdAsync(userId) ?? throw new InvalidOperationException("That user no longer exists.");
         var token = await userManager.GeneratePasswordResetTokenAsync(user);
         var result = await userManager.ResetPasswordAsync(user, token, password);
@@ -114,24 +118,7 @@ public sealed class UserAdministrationService(
         var administratorId = await RequireAdministratorAsync(cancellationToken);
         if (userId == administratorId) throw new InvalidOperationException("You cannot delete your own account.");
 
-        await using (var db = await dbFactory.CreateDbContextAsync(cancellationToken))
-        {
-            var user = await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.Id == userId, cancellationToken)
-                ?? throw new InvalidOperationException("That user no longer exists.");
-            if (user.IsAdministrator && await db.Users.CountAsync(x => x.IsAdministrator, cancellationToken) <= 1)
-                throw new InvalidOperationException("The last administrator cannot be deleted.");
-
-            var soleHouseholds = await db.HouseholdMembers
-                .Where(x => x.UserId == userId && x.Household.Members.Count == 1)
-                .Select(x => x.Household.Name)
-                .ToListAsync(cancellationToken);
-            if (soleHouseholds.Count > 0)
-                throw new InvalidOperationException($"This user is the only member of: {string.Join(", ", soleHouseholds)}. Add another member before deleting the account.");
-        }
-
-        var identityUser = await userManager.FindByIdAsync(userId) ?? throw new InvalidOperationException("That user no longer exists.");
-        var result = await userManager.DeleteAsync(identityUser);
-        if (!result.Succeeded) throw new InvalidOperationException(Describe(result));
+        await accountDeletion.DeleteAsync(userId, cancellationToken);
     }
 
     private async Task<string> RequireAdministratorAsync(CancellationToken cancellationToken)

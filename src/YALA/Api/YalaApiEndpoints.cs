@@ -138,6 +138,7 @@ public static class YalaApiEndpoints
 
         var userId = http.User.FindFirstValue(ClaimTypes.NameIdentifier);
         var user = userId is null ? null : await db.Users.AsNoTracking().SingleOrDefaultAsync(x => x.Id == userId, cancellationToken);
+        if (user is null) return Results.Unauthorized();
         SelectRequestedHousehold(http, households);
         var snapshot = await GetHouseholdSnapshotAsync(households, cancellationToken);
         return Results.Ok(new { UserId = userId, IsAuthenticated = true, RequiresSetup = requiresSetup, UserName = user?.UserName, IsAdministrator = user?.IsAdministrator == true, Households = snapshot });

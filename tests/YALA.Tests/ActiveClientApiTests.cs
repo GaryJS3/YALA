@@ -249,6 +249,187 @@ public sealed class ActiveClientApiTests
         Assert.Contains((await api.GetHouseholdsAsync()).Items, x => x.Id == household);
     }
 
+    [Theory]
+    [InlineData("/api/households/create", "{\"Name\":null}")]
+    [InlineData("/api/households/rename", "{\"Name\":null}")]
+    [InlineData("/api/households/categories", "{\"Name\":null}")]
+    [InlineData("/api/households/members", "{\"UserName\":null}")]
+    [InlineData("/api/catalog/aliases", "{\"ItemId\":\"00000000-0000-0000-0000-000000000000\",\"Alias\":null}")]
+    [InlineData("/api/users", "{\"DisplayName\":null,\"UserName\":null,\"Password\":null}")]
+    [InlineData("/api/users/reset-password", "{\"UserId\":\"alice\",\"Password\":null}")]
+    public async Task Null_required_values_return_bad_request(string path, string json)
+    {
+        await using var app = new TestApplication();
+        using var http = app.CreateAuthenticatedClient("alice");
+        await app.SeedAsync();
+        using var response = await http.PostAsync(path, new StringContent(json, System.Text.Encoding.UTF8, "application/json"));
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Duplicate_category_returns_a_useful_validation_error()
+    {
+        await using var app = new TestApplication();
+        using var http = app.CreateAuthenticatedClient("alice");
+        await app.SeedAsync();
+        var api = new ApiClient(http, new ClientState(), new BrowserStorage());
+        await api.SaveCategoryAsync(null, "Frozen");
+        var error = await Assert.ThrowsAsync<ApiException>(() => api.SaveCategoryAsync(null, "frozen"));
+        Assert.Equal(HttpStatusCode.BadRequest, error.StatusCode);
+        Assert.Equal("A category with that name already exists in this household.", error.Message);
+        Assert.Single((await api.GetHouseholdsAsync()).Categories);
+    }
+
+    [Fact]
+    public async Task Quantity_overflow_does_not_change_the_existing_list()
+    {
+        await using var app = new TestApplication();
+        using var http = app.CreateAuthenticatedClient("alice");
+        var (_, item) = await app.SeedAsync();
+        var api = new ApiClient(http, new ClientState(), new BrowserStorage());
+        await api.SaveCatalogItemAsync(new CatalogSaveRequest { Id = item, Name = "Milk", DefaultQuantity = decimal.MaxValue });
+        await api.AddItemAsync(item);
+        Assert.Equal(HttpStatusCode.BadRequest, (await Assert.ThrowsAsync<ApiException>(() => api.AddItemAsync(item))).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await Assert.ThrowsAsync<ApiException>(() => api.QuickAddAsync("Milk"))).StatusCode);
+        Assert.Equal(decimal.MaxValue, Assert.Single((await api.GetListAsync()).Rows).Quantity);
+        Assert.Equal(HttpStatusCode.BadRequest, (await Assert.ThrowsAsync<ApiException>(() => api.SaveCatalogItemAsync(
+            new CatalogSaveRequest { Id = item, Name = "Milk", DefaultQuantity = 0.1m }))).StatusCode);
+    }
+
+    [Fact]
+    public async Task Concurrent_generic_offer_creation_does_not_create_duplicate_offers()
+    {
+        await using var app = new TestApplication();
+        using var http = app.CreateAuthenticatedClient("alice");
+        var (_, item) = await app.SeedAsync();
+        var api = new ApiClient(http, new ClientState(), new BrowserStorage());
+        await api.SaveStoreAsync(null, "Market");
+        var store = Assert.Single(await api.GetStoresAsync()).Id;
+        var offer = new StoreOfferSaveRequest { StoreId = store, CatalogItemId = item, Price = 2m };
+        await Task.WhenAll(api.SaveOfferAsync(offer), api.SaveOfferAsync(offer));
+        Assert.Single((await api.GetStoreDetailsAsync(store))!.Offers);
+        await api.SetStoreActiveAsync(store, false);
+        Assert.Equal(0, Assert.Single((await api.GetCatalogAsync(null, false)).Items).StoreCount);
+    }
+
+    [Fact]
+    public async Task Membership_lookup_ignores_case_and_concurrent_removal_keeps_one_member()
+    {
+        await using var app = new TestApplication();
+        using var http = app.CreateAuthenticatedClient("alice");
+        var (home, _) = await app.SeedAsync();
+        await app.SeedHouseholdAsync("bob", "Bobs home");
+        var api = new ApiClient(http, new ClientState(), new BrowserStorage());
+        await api.AddMemberAsync("BOB");
+        using var bob = app.CreateAuthenticatedClient("bob");
+        http.DefaultRequestHeaders.Add("X-Yala-Household", home.ToString());
+        bob.DefaultRequestHeaders.Add("X-Yala-Household", home.ToString());
+        var results = await Task.WhenAll(http.DeleteAsync("/api/households/members/alice"), bob.DeleteAsync("/api/households/members/bob"));
+        Assert.Single(results, x => x.IsSuccessStatusCode);
+        foreach (var response in results) response.Dispose();
+        await using var scope = app.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        Assert.Equal(1, await db.HouseholdMembers.CountAsync(x => x.HouseholdId == home));
+    }
+
+    [Fact]
+    public async Task Self_service_deletion_keeps_the_last_admin_and_sole_household_members()
+    {
+        await using var app = new TestApplication();
+        await app.SeedAsync();
+        await app.SeedHouseholdAsync("bob", "Bobs home");
+        await using var scope = app.Services.CreateAsyncScope();
+        var deletion = scope.ServiceProvider.GetRequiredService<YALA.Services.AccountDeletionService>();
+        Assert.Contains("last administrator", (await Assert.ThrowsAsync<InvalidOperationException>(() => deletion.DeleteAsync("alice"))).Message);
+        Assert.Contains("only member", (await Assert.ThrowsAsync<InvalidOperationException>(() => deletion.DeleteAsync("bob"))).Message);
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        var bobsHome = await db.HouseholdMembers.Where(x => x.UserId == "bob").Select(x => x.HouseholdId).SingleAsync();
+        db.HouseholdMembers.Add(new HouseholdMember { HouseholdId = bobsHome, UserId = "alice" });
+        await db.SaveChangesAsync();
+        await deletion.DeleteAsync("bob");
+        Assert.False(await db.Users.AnyAsync(x => x.Id == "bob"));
+        Assert.True(await db.HouseholdMembers.AnyAsync(x => x.HouseholdId == bobsHome && x.UserId == "alice"));
+    }
+
+    [Fact]
+    public async Task Session_rejects_deleted_users_and_private_responses_are_not_cacheable()
+    {
+        await using var app = new TestApplication();
+        using var http = app.CreateAuthenticatedClient("alice");
+        await app.SeedAsync();
+        using var session = await http.GetAsync("/api/session");
+        Assert.True(session.Headers.CacheControl?.NoStore);
+        using var deleted = app.CreateAuthenticatedClient("deleted-user");
+        using var response = await deleted.GetAsync("/api/session");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("alice", "last administrator")]
+    [InlineData("bob", "only member")]
+    public async Task Account_settings_form_cannot_bypass_deletion_guards(string userId, string expected)
+    {
+        await using var app = new TestApplication();
+        await app.SeedAsync();
+        await app.SeedHouseholdAsync("bob", "Bobs home");
+        using var browser = app.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false });
+        browser.DefaultRequestHeaders.Add("X-Test-User", userId);
+        var html = await browser.GetStringAsync("/Account/Manage/DeletePersonalData");
+        var token = System.Text.RegularExpressions.Regex.Match(html, "name=\"__RequestVerificationToken\" value=\"([^\"]+)\"").Groups[1].Value;
+        Assert.NotEmpty(token);
+        using var response = await browser.PostAsync("/Account/Manage/DeletePersonalData", new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["_handler"] = "delete-user", ["__RequestVerificationToken"] = WebUtility.HtmlDecode(token), ["Input.Password"] = ""
+        }));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Contains(expected, await response.Content.ReadAsStringAsync());
+        await using var scope = app.Services.CreateAsyncScope();
+        Assert.True(await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Users.AnyAsync(x => x.Id == userId));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Login_honors_lockout_and_two_factor_authentication(bool twoFactor)
+    {
+        await using var app = new TestApplication();
+        await app.SeedAsync();
+        await using var scope = app.Services.CreateAsyncScope();
+        var users = scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.Identity.UserManager<ApplicationUser>>();
+        var user = (await users.FindByIdAsync("alice"))!;
+        Assert.True((await users.AddPasswordAsync(user, "password123")).Succeeded);
+        Assert.True((await users.SetLockoutEnabledAsync(user, true)).Succeeded);
+        if (twoFactor)
+        {
+            Assert.True((await users.ResetAuthenticatorKeyAsync(user)).Succeeded);
+            Assert.True((await users.SetTwoFactorEnabledAsync(user, true)).Succeeded);
+        }
+        using var browser = app.CreateClient(new WebApplicationFactoryClientOptions { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false });
+        for (var attempt = 0; attempt < (twoFactor ? 1 : 5); attempt++)
+        {
+            var html = await browser.GetStringAsync("/Account/Login?ReturnUrl=%2Fcatalog");
+            var token = System.Text.RegularExpressions.Regex.Match(html, "name=\"__RequestVerificationToken\" value=\"([^\"]+)\"").Groups[1].Value;
+            Assert.NotEmpty(token);
+            using var response = await browser.PostAsync("/Account/Login?ReturnUrl=%2Fcatalog", new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["_handler"] = "login", ["__RequestVerificationToken"] = WebUtility.HtmlDecode(token),
+                ["Input.UserName"] = "alice", ["Input.Password"] = twoFactor ? "password123" : "incorrect123", ["Input.RememberMe"] = "true"
+            }));
+            if (twoFactor)
+            {
+                Assert.Equal(HttpStatusCode.Found, response.StatusCode);
+                Assert.Contains("Account/LoginWith2fa", response.Headers.Location!.ToString());
+                Assert.Contains("RememberMe=True", response.Headers.Location.ToString(), StringComparison.OrdinalIgnoreCase);
+            }
+            else Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+        if (!twoFactor)
+        {
+            await scope.ServiceProvider.GetRequiredService<ApplicationDbContext>().Entry(user).ReloadAsync();
+            Assert.True(await users.IsLockedOutAsync(user));
+        }
+    }
+
     private sealed class TestApplication : WebApplicationFactory<global::Program>
     {
         private readonly string database = Path.Combine(Path.GetTempPath(), $"yala-tests-{Guid.NewGuid():N}.db");

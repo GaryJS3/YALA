@@ -134,7 +134,7 @@ public sealed class HouseholdService(
     public async Task<Guid> CreateAsync(string name, bool makeDefault = false, CancellationToken cancellationToken = default)
     {
         var userId = await GetUserIdAsync() ?? throw new InvalidOperationException("Sign in before creating a household.");
-        var normalizedName = name.Trim();
+        var normalizedName = name?.Trim() ?? "";
         if (normalizedName.Length is < 2 or > 80)
         {
             throw new ArgumentException("Household names must be between 2 and 80 characters.", nameof(name));
@@ -165,7 +165,7 @@ public sealed class HouseholdService(
     public async Task RenameCurrentAsync(string name, CancellationToken cancellationToken = default)
     {
         var current = await GetCurrentAsync(cancellationToken) ?? throw new InvalidOperationException("Choose a household first.");
-        var normalizedName = name.Trim();
+        var normalizedName = name?.Trim() ?? "";
         if (normalizedName.Length is < 2 or > 80)
         {
             throw new ArgumentException("Household names must be between 2 and 80 characters.", nameof(name));
@@ -239,9 +239,12 @@ public sealed class HouseholdService(
     public async Task SaveCategoryAsync(Guid? categoryId, string name, CancellationToken cancellationToken = default)
     {
         var current = await GetCurrentAsync(cancellationToken) ?? throw new InvalidOperationException("Choose a household first.");
-        var normalizedName = name.Trim();
+        var normalizedName = name?.Trim() ?? "";
         if (normalizedName.Length is < 1 or > 60) throw new ArgumentException("Category names must be between 1 and 60 characters.", nameof(name));
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        if (await db.Categories.AnyAsync(x => x.HouseholdId == current.HouseholdId && x.Id != categoryId && x.Name.ToLower() == normalizedName.ToLower(), cancellationToken))
+            throw new ArgumentException("A category with that name already exists in this household.");
         Category category;
         if (categoryId is Guid id)
         {
@@ -259,6 +262,7 @@ public sealed class HouseholdService(
         }
         category.Name = normalizedName;
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     public async Task DeleteCategoryAsync(Guid categoryId, CancellationToken cancellationToken = default)
@@ -336,8 +340,11 @@ public sealed class HouseholdService(
     public async Task AddMemberAsync(string userName, CancellationToken cancellationToken = default)
     {
         var current = await GetCurrentAsync(cancellationToken) ?? throw new InvalidOperationException("Choose a household first.");
+        ArgumentException.ThrowIfNullOrWhiteSpace(userName);
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var user = await db.Users.SingleOrDefaultAsync(x => x.UserName == userName.Trim(), cancellationToken)
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        var normalizedUserName = userName.Trim().ToUpperInvariant();
+        var user = await db.Users.SingleOrDefaultAsync(x => x.NormalizedUserName == normalizedUserName, cancellationToken)
             ?? throw new InvalidOperationException("That YALA username does not exist.");
         if (await db.HouseholdMembers.AnyAsync(x => x.UserId == user.Id && x.HouseholdId == current.HouseholdId, cancellationToken))
         {
@@ -346,6 +353,7 @@ public sealed class HouseholdService(
 
         db.HouseholdMembers.Add(new HouseholdMember { HouseholdId = current.HouseholdId, UserId = user.Id });
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         CurrentHouseholdChanged?.Invoke();
     }
 
@@ -353,6 +361,7 @@ public sealed class HouseholdService(
     {
         var current = await GetCurrentAsync(cancellationToken) ?? throw new InvalidOperationException("Choose a household first.");
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var members = await db.HouseholdMembers.Where(x => x.HouseholdId == current.HouseholdId).ToListAsync(cancellationToken);
         var membership = members.SingleOrDefault(x => x.UserId == userIdToRemove)
             ?? throw new InvalidOperationException("That person is not in this household.");
@@ -371,6 +380,7 @@ public sealed class HouseholdService(
         }
 
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         CurrentHouseholdChanged?.Invoke();
     }
 

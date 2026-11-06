@@ -1,5 +1,5 @@
 <article class="grocery-row @(Item.IsChecked ? "is-checked" : "")">
-    <button type="button" class="check-control" aria-label="@(Item.IsChecked ? "Mark " + Item.Name + " not done" : "Mark " + Item.Name + " done")" @onclick="() => OnToggle.InvokeAsync(Item.Id)">@if (Item.IsChecked) { <span>✓</span> }</button>
+    <button type="button" class="check-control" aria-pressed="@Item.IsChecked.ToString().ToLowerInvariant()" aria-label="@(Item.IsChecked ? "Mark " + Item.Name + " not done" : "Mark " + Item.Name + " done")" @onclick="() => OnToggle.InvokeAsync(Item.Id)">@if (Item.IsChecked) { <span>✓</span> }</button>
     @if (!string.IsNullOrWhiteSpace(Item.ImagePath)) { <ImageLightbox Src="@($"/images/{Item.ImagePath}")" Alt="@Item.Name" TriggerClass="grocery-thumb" Loading="lazy" /> }
     @if (Item.CatalogItemId is Guid catalogItemId) { <a class="grocery-item-link" href="/catalog/item/@catalogItemId"><GroceryItemContent Item="@Item" ShowPrices="@ShowPrices" CurrentStoreId="@CurrentStoreId" /></a> } else { <div class="grocery-item-link is-static"><GroceryItemContent Item="@Item" ShowPrices="@ShowPrices" CurrentStoreId="@CurrentStoreId" /></div> }
     <div class="row-end-controls">

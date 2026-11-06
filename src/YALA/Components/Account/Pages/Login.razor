@@ -63,10 +63,20 @@
     private async Task LoginUserAsync()
     {
         if (!editContext.Validate()) return;
-        var result = await SignInManager.PasswordSignInAsync(Input.UserName, Input.Password, Input.RememberMe, lockoutOnFailure: false);
+        var result = await SignInManager.PasswordSignInAsync(Input.UserName.Trim(), Input.Password, Input.RememberMe, lockoutOnFailure: true);
         if (result.Succeeded)
         {
             RedirectManager.RedirectTo(ReturnUrl);
+            return;
+        }
+
+        if (result.RequiresTwoFactor)
+        {
+            RedirectManager.RedirectTo("Account/LoginWith2fa", new()
+            {
+                ["ReturnUrl"] = ReturnUrl,
+                ["RememberMe"] = Input.RememberMe
+            });
             return;
         }
 

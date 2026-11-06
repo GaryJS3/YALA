@@ -160,6 +160,7 @@ public sealed class StoreService(IDbContextFactory<ApplicationDbContext> dbConte
         var household = await RequireHouseholdAsync(cancellationToken);
         if (price < 0) throw new ArgumentOutOfRangeException(nameof(price), "Price cannot be negative.");
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var store = await db.Stores.SingleOrDefaultAsync(x => x.Id == storeId && x.HouseholdId == household.HouseholdId && x.IsActive, cancellationToken)
             ?? throw new InvalidOperationException("That store is not active in this household.");
         var item = await db.CatalogItems.SingleOrDefaultAsync(x => x.Id == catalogItemId && x.HouseholdId == household.HouseholdId && !x.IsArchived, cancellationToken)
@@ -184,6 +185,7 @@ public sealed class StoreService(IDbContextFactory<ApplicationDbContext> dbConte
         }
 
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         notifier.Notify(household.HouseholdId);
     }
 

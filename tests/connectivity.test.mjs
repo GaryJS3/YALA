@@ -11,6 +11,34 @@ test('reconnection listener invokes the active component and is removed on dispo
     assert.deepEqual(calls, ['Reconnected']);
     context.window.yalaConnectivity.unwatch();
     assert.equal(listeners.has('online'), false);
+    assert.equal(listeners.has('focus'), false);
+    assert.equal(listeners.has('visibilitychange'), false);
+    assert.equal(listeners.has('interval'), false);
+});
+
+test('shared-list refresh skips hidden, offline and overlapping requests', async () => {
+    const { context, listeners } = loadScript();
+    let calls = 0;
+    let finish;
+    context.window.yalaConnectivity.watch({ invokeMethodAsync: () => { calls++; return new Promise(resolve => finish = resolve); } });
+    context.document.visibilityState = 'hidden';
+    await listeners.get('interval')();
+    assert.equal(calls, 0);
+    context.document.visibilityState = 'visible';
+    context.navigator.onLine = false;
+    await listeners.get('interval')();
+    assert.equal(calls, 0);
+    context.navigator.onLine = true;
+    const pending = listeners.get('focus')();
+    await listeners.get('interval')();
+    assert.equal(calls, 1);
+    finish();
+    await pending;
+    const next = listeners.get('visibilitychange')();
+    assert.equal(calls, 2);
+    finish();
+    await next;
+    context.window.yalaConnectivity.unwatch();
 });
 
 test('logout removes private browser data and YALA caches while preserving unrelated data', async () => {
@@ -44,6 +72,16 @@ test('queue changes use one browser lock and preserve order when an existing cha
     assert.deepEqual(lockNames, [key, key, key, key]);
 });
 
+test('a damaged offline queue is never overwritten by a new edit', () => {
+    const { context } = loadScript();
+    const key = 'yala.pending-mutations.v2';
+    for (const saved of ['{broken', 'null', '{}']) {
+        context.localStorage.setItem(key, saved);
+        assert.throws(() => context.window.yalaOfflineQueue.update(key, 'new', '{"operationId":"new"}'));
+        assert.equal(context.localStorage.getItem(key), saved);
+    }
+});
+
 function loadScript() {
     const listeners = new Map();
     const deletedCaches = [];
@@ -61,9 +99,14 @@ function loadScript() {
     const window = {
         addEventListener: (name, callback) => listeners.set(name, callback),
         removeEventListener: (name, callback) => { if (listeners.get(name) === callback) listeners.delete(name); },
+        setInterval: (callback, delay) => { assert.equal(delay, 15000); listeners.set('interval', callback); return 1; },
+        clearInterval: () => listeners.delete('interval'),
         caches
     };
-    const context = { window, localStorage, sessionStorage, caches, navigator: {}, document: { addEventListener: (name, callback) => listeners.set(name, callback) } };
+    const context = { window, localStorage, sessionStorage, caches, navigator: {}, document: {
+        addEventListener: (name, callback) => listeners.set(name, callback),
+        removeEventListener: (name, callback) => { if (listeners.get(name) === callback) listeners.delete(name); }
+    } };
     vm.runInNewContext(readFileSync(new URL('../src/YALA/wwwroot/connectivity.js', import.meta.url), 'utf8'), context);
     return { context, listeners, deletedCaches };
 }

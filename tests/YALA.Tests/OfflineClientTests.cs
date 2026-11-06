@@ -6,6 +6,21 @@ namespace YALA.Tests;
 
 public sealed class OfflineClientTests
 {
+    [Theory]
+    [InlineData("{broken")]
+    [InlineData("null")]
+    [InlineData("{}")]
+    public async Task Damaged_queue_is_reported_and_preserved(string saved)
+    {
+        var sent = false;
+        using var fixture = new ClientFixture(_ => { sent = true; return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent)); });
+        fixture.Storage.Local["yala.pending-mutations.v2"] = saved;
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => fixture.Sync.ExecuteAsync("api/list/quick-add", new { Name = "Milk" }));
+        Assert.Contains("have been kept", error.Message);
+        Assert.Equal(saved, fixture.Storage.Local["yala.pending-mutations.v2"]);
+        Assert.False(sent);
+    }
+
     [Fact]
     public async Task Unscoped_legacy_changes_are_preserved_until_explicitly_discarded_and_never_replayed()
     {
