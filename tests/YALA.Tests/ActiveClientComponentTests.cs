@@ -38,7 +38,7 @@ public sealed class ActiveClientComponentTests
                 _ => StubHttpHandler.Json(Array.Empty<QuickAddChoice>())
             });
         });
-        var html = await RenderHomeAsync(fixture, interact: async renderer =>
+        var html = await RenderHomeAsync(fixture, interact: async (renderer, _) =>
         {
             failing = true;
             await renderer.DispatchAsync("oninput", new ChangeEventArgs { Value = "Milk" });
@@ -54,6 +54,63 @@ public sealed class ActiveClientComponentTests
             Assert.Contains("Permission denied", html);
             Assert.Empty(await fixture.Queue.GetAsync());
         }
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.NoContent, false)]
+    [InlineData(HttpStatusCode.Forbidden, false)]
+    [InlineData(HttpStatusCode.NoContent, true)]
+    public async Task Home_hides_removed_row_while_saving_and_restores_it_if_rejected(HttpStatusCode status, bool offline)
+    {
+        var household = Guid.NewGuid();
+        var row = new ShoppingListRow { Id = Guid.NewGuid(), Name = "Milk", Quantity = 1 };
+        var response = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var removed = false;
+        using var fixture = new ClientFixture(async request =>
+        {
+            switch (request.RequestUri!.AbsolutePath)
+            {
+                case "/api/session":
+                    return StubHttpHandler.Json(new SessionSnapshot
+                    {
+                        UserId = "alice", IsAuthenticated = true,
+                        Households = new() { Current = new() { Id = household, Name = "Home" } }
+                    });
+                case "/api/list":
+                    return StubHttpHandler.Json(new ListSnapshot { Rows = removed ? [] : [row] });
+                case "/api/antiforgery":
+                    return StubHttpHandler.Json(new AntiforgeryResponse { Token = "token" });
+                case "/api/list/remove":
+                    await response.Task;
+                    if (offline) throw new HttpRequestException("Offline");
+                    removed = status == HttpStatusCode.NoContent;
+                    return new HttpResponseMessage(status) { Content = new StringContent("Removal denied") };
+                default:
+                    return StubHttpHandler.Json(Array.Empty<QuickAddChoice>());
+            }
+        });
+
+        var html = await RenderHomeAsync(fixture, interact: async (renderer, renderHtml) =>
+        {
+            var click = renderer.ClickRemoveAsync();
+            var duringSave = renderHtml();
+            response.SetResult();
+            await click;
+            Assert.DoesNotContain("Remove Milk", duringSave);
+            Assert.Contains("Updating list", duringSave);
+        });
+
+        Assert.DoesNotContain("Updating list", html);
+        if (status == HttpStatusCode.Forbidden)
+        {
+            Assert.Contains("Remove Milk", html);
+            Assert.Contains("Removal denied", html);
+        }
+        else
+        {
+            Assert.DoesNotContain("Remove Milk", html);
+        }
+        if (offline) Assert.Single(await fixture.Queue.GetAsync());
     }
 
     [Fact]
@@ -122,7 +179,7 @@ public sealed class ActiveClientComponentTests
         Assert.All(requests, request => Assert.Equal(fixture.HouseholdId.ToString(), request.Household));
     }
 
-    private static async Task<string> RenderHomeAsync(ClientFixture fixture, string query = "", Func<TestHtmlRenderer, Task>? interact = null)
+    private static async Task<string> RenderHomeAsync(ClientFixture fixture, string query = "", Func<TestHtmlRenderer, Func<string>, Task>? interact = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -140,7 +197,7 @@ public sealed class ActiveClientComponentTests
         {
             var component = renderer.BeginRenderingComponent(typeof(Home), ParameterView.Empty);
             await component.QuiescenceTask;
-            if (interact is not null) await interact(renderer);
+            if (interact is not null) await interact(renderer, component.ToHtmlString);
             return component.ToHtmlString();
         });
     }
@@ -157,6 +214,19 @@ public sealed class ActiveClientComponentTests
             var frames = GetCurrentRenderTreeFrames(0);
             var frame = frames.Array.Take(frames.Count).First(x => x.FrameType == RenderTreeFrameType.Attribute && x.AttributeName == attribute);
             return DispatchEventAsync(frame.AttributeEventHandlerId, null, args);
+#pragma warning restore BL0006
+        }
+
+        public Task ClickRemoveAsync()
+        {
+#pragma warning disable BL0006
+            var home = GetCurrentRenderTreeFrames(0);
+            var row = home.Array.Take(home.Count).Single(frame => frame.FrameType == RenderTreeFrameType.Component
+                && frame.ComponentType == typeof(YALA.Client.Components.GroceryRow));
+            var frames = GetCurrentRenderTreeFrames(row.ComponentId);
+            var removeButton = frames.Array.Take(frames.Count).Last(frame => frame.FrameType == RenderTreeFrameType.Attribute
+                && frame.AttributeName == "onclick");
+            return DispatchEventAsync(removeButton.AttributeEventHandlerId, null, new MouseEventArgs());
 #pragma warning restore BL0006
         }
     }
