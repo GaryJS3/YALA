@@ -13,11 +13,16 @@
     private string newName = "";
     private string error = "";
     private bool saving;
-    protected override async Task OnInitializedAsync() => await LoadAsync();
+    protected override async Task OnInitializedAsync()
+    {
+        try { await LoadAsync(); }
+        catch (Exception ex) { error = ex.Message; }
+    }
     private async Task LoadAsync() => stores = (await Api.GetStoresAsync()).ToList();
     private async Task SaveNewAsync()
     {
-        if (string.IsNullOrWhiteSpace(newName)) return;
+        if (saving) return;
+        if (string.IsNullOrWhiteSpace(newName)) { error = "Enter a store name."; return; }
         saving = true;
         error = "";
         try { await Api.SaveStoreAsync(null, newName); newName = ""; await LoadAsync(); }

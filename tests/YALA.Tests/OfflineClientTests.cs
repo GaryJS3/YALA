@@ -22,7 +22,7 @@ public sealed class OfflineClientTests
     public async Task Network_failure_queues_original_user_and_household()
     {
         using var fixture = new ClientFixture(_ => throw new HttpRequestException("Offline"));
-        await fixture.Sync.ExecuteAsync("api/list/quick-add", new { Name = "Milk" }, () => fixture.Api.QuickAddAsync("Milk"));
+        await fixture.Sync.ExecuteAsync("api/list/quick-add", new { Name = "Milk" });
         var mutation = Assert.Single(await fixture.Queue.GetAsync());
         Assert.Equal("alice", mutation.UserId);
         Assert.Equal(fixture.HouseholdId, mutation.HouseholdId);
@@ -39,7 +39,7 @@ public sealed class OfflineClientTests
     public async Task Rejected_online_requests_are_not_queued(HttpStatusCode status)
     {
         using var fixture = new ClientFixture(_ => Task.FromResult(new HttpResponseMessage(status)));
-        await Assert.ThrowsAsync<ApiException>(() => fixture.Sync.ExecuteAsync("api/list/toggle", new { Id = Guid.NewGuid() }, () => fixture.Api.ToggleAsync(Guid.NewGuid())));
+        await Assert.ThrowsAsync<ApiException>(() => fixture.Sync.ExecuteAsync("api/list/toggle", new { Id = Guid.NewGuid() }));
         Assert.Empty(await fixture.Queue.GetAsync());
         Assert.False(fixture.State.IsOffline);
     }

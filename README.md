@@ -10,14 +10,14 @@ See [the roadmap and progress tracker](docs/ROADMAP.md) for shipped features and
 
 ## Run with Docker Compose
 
-Docker Compose is the recommended self-hosted setup. It runs one ASP.NET Core container, stores the SQLite database, uploaded images, and Identity signing keys in one persistent volume, and listens on loopback port 8080 for a reverse proxy.
+Docker Compose runs one ASP.NET Core container and stores the SQLite database, uploaded images, and Identity signing keys in one persistent volume. It publishes host port 8081 for direct access or a reverse proxy.
 
 ```sh
 docker compose up -d --build
 docker compose ps
 ```
 
-Open `http://127.0.0.1:8080` locally, or configure a reverse proxy to send HTTPS traffic to that address. On first launch, create the first username, password, and household. Public registration closes once that account exists. Administrators can create additional local accounts. Household members can add existing YALA users to their household.
+Open `http://127.0.0.1:8081` locally, or configure a reverse proxy to send HTTPS traffic to the host on port 8081. On first launch, create the first username, password, and household. Public registration closes once that account exists. Administrators can create additional local accounts. Household members can add existing YALA users to their household.
 
 The container listens on port `8080`. The named volume `yala-data` is mounted at `/data` and contains:
 
@@ -41,11 +41,11 @@ YALA expects TLS to terminate at the reverse proxy. For Caddy:
 
 ```caddyfile
 lists.example.com {
-    reverse_proxy 127.0.0.1:8080
+    reverse_proxy 127.0.0.1:8081
 }
 ```
 
-The interactive grocery screens run in WebAssembly and call the HTTP API. For Nginx, proxy the `Host`, `X-Forwarded-For`, and `X-Forwarded-Proto` headers. The Compose port binds to `127.0.0.1` so the application port is not exposed directly to the network.
+The interactive grocery screens run in WebAssembly and call the HTTP API. For Nginx, proxy the `Host`, `X-Forwarded-For`, and `X-Forwarded-Proto` headers. For a proxy on the same host, bind the published port to loopback with `127.0.0.1:8081:8080` in Compose. Restrict access to the backend port at the host firewall if the proxy runs on a separate machine.
 
 ### Back up and restore
 
@@ -68,7 +68,7 @@ Back up `/data` before upgrading. Then rebuild and start the container:
 ```sh
 docker compose up -d --build
 docker compose logs --tail=100 yala
-curl --fail http://127.0.0.1:8080/health
+curl --fail http://127.0.0.1:8081/health
 ```
 
 Database migrations run as part of startup. Keep the same `yala-data` volume between versions.
@@ -108,6 +108,8 @@ The active grocery pages and reusable UI components live in `src/YALA.Client` an
 Each browser tab remembers its household independently. API reads, writes, and image uploads use that selection. Cached lists and queued changes are scoped to their original user and household. Network failures queue list changes; rejected HTTP requests display an error. Reconnecting or choosing **Sync now** retries pending changes for the current household. Rejected saved changes have separate Retry and Discard controls and do not block later changes. Logging out clears cached identity, lists, and pending changes from that browser.
 
 Older queued changes without household/user metadata are retained with a notice and are never automatically replayed. Check the list and re-add missing items before dismissing that notice.
+
+List requests from the current client can be retried safely after a response is lost. A queued **Clear checked** only clears rows that are still checked as they were when you pressed it. Older saved clear requests need to be reviewed and cleared again from the list.
 
 ## What works today
 

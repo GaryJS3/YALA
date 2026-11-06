@@ -22,6 +22,8 @@ public sealed class ApiClient(HttpClient http, ClientState state, IJSRuntime js)
         state.SetHousehold(session?.Households.Current);
         if (session?.Households.Current is { } current)
             await js.InvokeVoidAsync("sessionStorage.setItem", "yala.household", current.Id.ToString());
+        else
+            await js.InvokeVoidAsync("sessionStorage.removeItem", "yala.household");
         return session;
     }
 
@@ -57,6 +59,7 @@ public sealed class ApiClient(HttpClient http, ClientState state, IJSRuntime js)
         using var request = new HttpRequestMessage(new HttpMethod(mutation.Method), mutation.Uri);
         request.Headers.TryAddWithoutValidation("X-Yala-Household", mutation.HouseholdId.ToString());
         request.Headers.Add("X-Yala-User", mutation.UserId);
+        request.Headers.Add("X-Yala-Operation", mutation.OperationId.ToString());
         if (mutation.UserId != state.UserId) throw new InvalidOperationException("This change belongs to a different user.");
         if (!string.IsNullOrWhiteSpace(mutation.BodyJson))
         {
@@ -70,8 +73,8 @@ public sealed class ApiClient(HttpClient http, ClientState state, IJSRuntime js)
     public async Task<CatalogSnapshot> GetCatalogAsync(string? query, bool includeArchived, CancellationToken cancellationToken = default) =>
         await GetAsync<CatalogSnapshot>($"api/catalog?query={Uri.EscapeDataString(query ?? string.Empty)}&includeArchived={includeArchived}", cancellationToken) ?? new();
 
-    public async Task<CatalogDetails?> GetCatalogDetailsAsync(Guid? id, CancellationToken cancellationToken = default) =>
-        await GetAsync<CatalogDetails>(id is null ? "api/catalog/details" : $"api/catalog/details/{id}", cancellationToken);
+    public Task<CatalogDetails?> GetCatalogDetailsAsync(Guid? id, CancellationToken cancellationToken = default) =>
+        GetAsync<CatalogDetails>(id is null ? "api/catalog/details" : $"api/catalog/details/{id}", cancellationToken, allowNotFound: true);
 
     public async Task<CatalogFormOptions> GetCatalogFormOptionsAsync(CancellationToken cancellationToken = default) =>
         await GetAsync<CatalogFormOptions>("api/catalog/details", cancellationToken) ?? new();
@@ -104,32 +107,28 @@ public sealed class ApiClient(HttpClient http, ClientState state, IJSRuntime js)
         SendAsync(HttpMethod.Post, "api/catalog/store", new ItemStoreCommand(itemId, storeId, available), cancellationToken);
 
     public async Task<ProductLookupResult?> LookupProductAsync(string barcode, CancellationToken cancellationToken = default) =>
-        await GetAsync<ProductLookupResult>($"api/products/lookup/{Uri.EscapeDataString(barcode)}", cancellationToken);
+        await GetAsync<ProductLookupResult>($"api/products/lookup/{Uri.EscapeDataString(barcode)}", cancellationToken, allowNotFound: true);
 
-    public async Task UploadItemImageAsync(Guid id, IBrowserFile file, CancellationToken cancellationToken = default)
+    public Task UploadItemImageAsync(Guid id, IBrowserFile file, CancellationToken cancellationToken = default) =>
+        UploadImageAsync($"api/images/items/{id}", file, cancellationToken);
+
+    public Task UploadStoreImageAsync(Guid id, IBrowserFile file, CancellationToken cancellationToken = default) =>
+        UploadImageAsync($"api/images/stores/{id}", file, cancellationToken);
+
+    public Task UploadVariantImageAsync(Guid id, IBrowserFile file, CancellationToken cancellationToken = default) =>
+        UploadImageAsync($"api/images/variants/{id}", file, cancellationToken);
+
+    private async Task UploadImageAsync(string uri, IBrowserFile file, CancellationToken cancellationToken)
     {
+        const int maximumImageBytes = 4 * 1024 * 1024;
+        if (file.Size is <= 0 or > maximumImageBytes) throw new ArgumentException("Images must be 4 MB or smaller.");
         var antiforgery = await GetAsync<AntiforgeryResponse>("api/antiforgery", cancellationToken);
         using var content = new MultipartFormDataContent();
-        await using var stream = file.OpenReadStream(4 * 1024 * 1024, cancellationToken);
+        await using var stream = file.OpenReadStream(maximumImageBytes, cancellationToken);
         using var fileContent = new StreamContent(stream);
-        fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
+        if (MediaTypeHeaderValue.TryParse(file.ContentType, out var contentType)) fileContent.Headers.ContentType = contentType;
         content.Add(fileContent, "file", file.Name);
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/images/items/{id}") { Content = content };
-        await AddHouseholdHeaderAsync(request);
-        if (!string.IsNullOrWhiteSpace(antiforgery?.Token)) request.Headers.TryAddWithoutValidation("RequestVerificationToken", antiforgery.Token);
-        using var response = await http.SendAsync(request, cancellationToken);
-        await EnsureSuccessAsync(response, cancellationToken);
-    }
-
-    public async Task UploadStoreImageAsync(Guid id, IBrowserFile file, CancellationToken cancellationToken = default)
-    {
-        var antiforgery = await GetAsync<AntiforgeryResponse>("api/antiforgery", cancellationToken);
-        using var content = new MultipartFormDataContent();
-        await using var stream = file.OpenReadStream(4 * 1024 * 1024, cancellationToken);
-        using var fileContent = new StreamContent(stream);
-        fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(file.ContentType);
-        content.Add(fileContent, "file", file.Name);
-        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/images/stores/{id}") { Content = content };
+        using var request = new HttpRequestMessage(HttpMethod.Post, uri) { Content = content };
         await AddHouseholdHeaderAsync(request);
         if (!string.IsNullOrWhiteSpace(antiforgery?.Token)) request.Headers.TryAddWithoutValidation("RequestVerificationToken", antiforgery.Token);
         using var response = await http.SendAsync(request, cancellationToken);
@@ -146,7 +145,7 @@ public sealed class ApiClient(HttpClient http, ClientState state, IJSRuntime js)
         await GetAsync<List<StoreSummary>>("api/stores", cancellationToken) ?? [];
 
     public async Task<StoreDetails?> GetStoreDetailsAsync(Guid id, CancellationToken cancellationToken = default) =>
-        await GetAsync<StoreDetails>($"api/stores/{id}", cancellationToken);
+        await GetAsync<StoreDetails>($"api/stores/{id}", cancellationToken, allowNotFound: true);
 
     public Task SaveStoreAsync(Guid? id, string name, CancellationToken cancellationToken = default) =>
         SendAsync(HttpMethod.Post, "api/stores/save", new StoreCommand(id, name), cancellationToken);
@@ -217,9 +216,10 @@ public sealed class ApiClient(HttpClient http, ClientState state, IJSRuntime js)
     public Task DeleteUserAsync(string userId, CancellationToken cancellationToken = default) =>
         SendAsync(HttpMethod.Delete, $"api/users/{Uri.EscapeDataString(userId)}", null, cancellationToken);
 
-    private async Task<T?> GetAsync<T>(string uri, CancellationToken cancellationToken)
+    private async Task<T?> GetAsync<T>(string uri, CancellationToken cancellationToken, bool allowNotFound = false)
     {
         using var response = await SendCoreAsync(HttpMethod.Get, uri, null, cancellationToken);
+        if (allowNotFound && response.StatusCode == HttpStatusCode.NotFound) return default;
         await EnsureSuccessAsync(response, cancellationToken);
         return await response.Content.ReadFromJsonAsync<T>(JsonOptions, cancellationToken);
     }

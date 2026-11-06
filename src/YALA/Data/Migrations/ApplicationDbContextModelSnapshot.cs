@@ -15,7 +15,7 @@ namespace YALA.Data.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "10.0.10");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.13");
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
                 {
@@ -557,6 +557,32 @@ namespace YALA.Data.Migrations
                     b.ToTable("ShoppingListItems");
                 });
 
+            modelBuilder.Entity("YALA.Data.Entities.ShoppingListOperation", b =>
+                {
+                    b.Property<Guid>("HouseholdId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Result")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("HouseholdId", "UserId", "Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("ShoppingListOperations");
+                });
+
             modelBuilder.Entity("YALA.Data.Entities.Store", b =>
                 {
                     b.Property<Guid>("Id")
@@ -877,6 +903,21 @@ namespace YALA.Data.Migrations
                     b.Navigation("AssignedStore");
 
                     b.Navigation("CatalogItem");
+                });
+
+            modelBuilder.Entity("YALA.Data.Entities.ShoppingListOperation", b =>
+                {
+                    b.HasOne("YALA.Data.Entities.Household", null)
+                        .WithMany()
+                        .HasForeignKey("HouseholdId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("YALA.Data.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("YALA.Data.Entities.Store", b =>

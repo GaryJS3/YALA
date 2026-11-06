@@ -9,6 +9,7 @@ public sealed class ShoppingListRow
     public string? ImagePath { get; set; }
     public decimal Quantity { get; set; }
     public bool IsChecked { get; set; }
+    public DateTimeOffset? CheckedAt { get; set; }
     public bool IsFavorite { get; set; }
     public Guid? AssignedStoreId { get; set; }
     public string? AssignedStoreName { get; set; }

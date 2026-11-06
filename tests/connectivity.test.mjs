@@ -25,6 +25,25 @@ test('logout removes private browser data and YALA caches while preserving unrel
     assert.deepEqual(deletedCaches, ['yala-shell-v1']);
 });
 
+test('queue changes use one browser lock and preserve order when an existing change is updated', async () => {
+    const { context } = loadScript();
+    const queue = context.window.yalaOfflineQueue;
+    const key = 'yala.pending-mutations.v2';
+    const lockNames = [];
+    context.navigator.locks = { request: async (name, update) => { lockNames.push(name); return update(); } };
+    await Promise.all([
+        queue.update(key, 'first', '{"operationId":"first"}'),
+        queue.update(key, 'second', '{"operationId":"second"}')
+    ]);
+    await queue.update(key, 'first', '{"operationId":"first","error":"Retry"}');
+    assert.deepEqual(JSON.parse(context.localStorage.getItem(key)), [
+        { operationId: 'first', error: 'Retry' }, { operationId: 'second' }
+    ]);
+    await queue.update(key, 'first', null);
+    assert.deepEqual(JSON.parse(context.localStorage.getItem(key)), [{ operationId: 'second' }]);
+    assert.deepEqual(lockNames, [key, key, key, key]);
+});
+
 function loadScript() {
     const listeners = new Map();
     const deletedCaches = [];
@@ -33,6 +52,8 @@ function loadScript() {
         'yala.list:alice:home': '{}',
         'yala.pending-mutations.v2': '[]',
         unrelated: 'keep',
+        getItem(key) { return this[key] ?? null; },
+        setItem(key, value) { this[key] = value; },
         removeItem(key) { delete this[key]; }
     };
     const sessionStorage = { 'yala.household': 'home', removeItem(key) { delete this[key]; } };
@@ -42,7 +63,7 @@ function loadScript() {
         removeEventListener: (name, callback) => { if (listeners.get(name) === callback) listeners.delete(name); },
         caches
     };
-    const context = { window, localStorage, sessionStorage, caches, document: { addEventListener: (name, callback) => listeners.set(name, callback) } };
+    const context = { window, localStorage, sessionStorage, caches, navigator: {}, document: { addEventListener: (name, callback) => listeners.set(name, callback) } };
     vm.runInNewContext(readFileSync(new URL('../src/YALA/wwwroot/connectivity.js', import.meta.url), 'utf8'), context);
     return { context, listeners, deletedCaches };
 }

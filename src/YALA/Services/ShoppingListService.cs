@@ -1,3 +1,4 @@
+using System.Text.Json;
 using YALA.Client.Models;
 using Microsoft.EntityFrameworkCore;
 using YALA.Data;
@@ -61,6 +62,7 @@ public sealed class ShoppingListService(
                 : null),
             Quantity = row.Quantity,
             IsChecked = row.IsChecked,
+            CheckedAt = row.CheckedAt,
             IsFavorite = row.CatalogItem?.IsFavorite ?? false,
             AssignedStoreId = row.AssignedStoreId,
             AssignedStoreName = row.AssignedStore?.Name,
@@ -130,163 +132,184 @@ public sealed class ShoppingListService(
         return matches.Select(x => new QuickAddChoice(x.Id, x.Name, x.IsFavorite, x.LastPurchased, x.PurchaseCount)).ToArray();
     }
 
-    public async Task AddAsync(Guid catalogItemId, CancellationToken cancellationToken = default)
-    {
-        var household = await RequireHouseholdAsync(cancellationToken);
-        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var item = await db.CatalogItems.SingleOrDefaultAsync(
-            x => x.Id == catalogItemId && x.HouseholdId == household.HouseholdId && !x.IsArchived,
-            cancellationToken) ?? throw new InvalidOperationException("That item is not in this household's catalog.");
-
-        var row = await db.ShoppingListItems.SingleOrDefaultAsync(
-            x => x.HouseholdId == household.HouseholdId && x.CatalogItemId == item.Id,
-            cancellationToken);
-        if (row is null)
+    public Task AddAsync(Guid catalogItemId, CancellationToken cancellationToken = default, Guid? operationId = null) =>
+        ApplyAsync(nameof(AddAsync), operationId, async (db, household) =>
         {
-            row = new ShoppingListItem
+            var item = await db.CatalogItems.SingleOrDefaultAsync(
+                x => x.Id == catalogItemId && x.HouseholdId == household.HouseholdId && !x.IsArchived,
+                cancellationToken) ?? throw new InvalidOperationException("That item is not in this household's catalog.");
+
+            var row = await db.ShoppingListItems.SingleOrDefaultAsync(
+                x => x.HouseholdId == household.HouseholdId && x.CatalogItemId == item.Id,
+                cancellationToken);
+            if (row is null)
             {
-                HouseholdId = household.HouseholdId,
-                CatalogItemId = item.Id,
-                Quantity = item.DefaultQuantity,
-                AddedByUserId = household.UserId
-            };
-            db.ShoppingListItems.Add(row);
-        }
-        else
-        {
-            row.Quantity += item.DefaultQuantity;
-            row.IsChecked = false;
-            row.CheckedAt = null;
-        }
-
-        await db.SaveChangesAsync(cancellationToken);
-        notifier.Notify(household.HouseholdId);
-    }
-
-    public async Task<Guid> QuickAddAsync(string name, CancellationToken cancellationToken = default)
-    {
-        var normalized = name.Trim();
-        if (normalized.Length is < 1 or > 120)
-        {
-            throw new ArgumentException("Item names must be between 1 and 120 characters.", nameof(name));
-        }
-
-        var household = await RequireHouseholdAsync(cancellationToken);
-        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var term = normalized.ToLower();
-        var item = await db.CatalogItems.FirstOrDefaultAsync(
-            x => x.HouseholdId == household.HouseholdId && !x.IsArchived
-                && (x.Name.ToLower() == term
-                    || x.Aliases.Any(a => a.Alias.ToLower() == term)
-                    || x.Variants.Any(v => !v.IsArchived && (v.Name.ToLower() == term || v.Barcodes.Any(b => b.Barcode == normalized)))),
-            cancellationToken);
-        var row = item is not null
-            ? await db.ShoppingListItems.SingleOrDefaultAsync(x => x.HouseholdId == household.HouseholdId && x.CatalogItemId == item.Id, cancellationToken)
-            : await db.ShoppingListItems.SingleOrDefaultAsync(x => x.HouseholdId == household.HouseholdId && x.CatalogItemId == null && x.CustomName != null && x.CustomName.ToLower() == term, cancellationToken);
-        if (row is null)
-        {
-            row = new ShoppingListItem
+                row = new ShoppingListItem
+                {
+                    HouseholdId = household.HouseholdId,
+                    CatalogItemId = item.Id,
+                    Quantity = item.DefaultQuantity,
+                    AddedByUserId = household.UserId
+                };
+                db.ShoppingListItems.Add(row);
+            }
+            else
             {
-                HouseholdId = household.HouseholdId,
-                CatalogItemId = item?.Id,
-                CustomName = item is null ? normalized : null,
-                Quantity = item?.DefaultQuantity ?? 1,
-                AddedByUserId = household.UserId
-            };
-            db.ShoppingListItems.Add(row);
-        }
-        else
+                row.Quantity += item.DefaultQuantity;
+                row.IsChecked = false;
+                row.CheckedAt = null;
+            }
+
+            return true;
+        }, cancellationToken);
+
+    public Task<Guid> QuickAddAsync(string name, CancellationToken cancellationToken = default, Guid? operationId = null) =>
+        ApplyAsync(nameof(QuickAddAsync), operationId, async (db, household) =>
         {
-            row.Quantity += item?.DefaultQuantity ?? 1;
-            row.IsChecked = false;
-            row.CheckedAt = null;
-        }
+            var normalized = name?.Trim() ?? "";
+            if (normalized.Length is < 1 or > 120)
+            {
+                throw new ArgumentException("Item names must be between 1 and 120 characters.", nameof(name));
+            }
 
-        await db.SaveChangesAsync(cancellationToken);
-        notifier.Notify(household.HouseholdId);
-        return item?.Id ?? row.Id;
-    }
+            var term = normalized.ToLower();
+            var item = await db.CatalogItems.FirstOrDefaultAsync(
+                x => x.HouseholdId == household.HouseholdId && !x.IsArchived
+                    && (x.Name.ToLower() == term
+                        || x.Aliases.Any(a => a.Alias.ToLower() == term)
+                        || x.Variants.Any(v => !v.IsArchived && (v.Name.ToLower() == term || v.Barcodes.Any(b => b.Barcode == normalized)))),
+                cancellationToken);
+            var row = item is not null
+                ? await db.ShoppingListItems.SingleOrDefaultAsync(x => x.HouseholdId == household.HouseholdId && x.CatalogItemId == item.Id, cancellationToken)
+                : await db.ShoppingListItems.SingleOrDefaultAsync(x => x.HouseholdId == household.HouseholdId && x.CatalogItemId == null && x.CustomName != null && x.CustomName.ToLower() == term, cancellationToken);
+            if (row is null)
+            {
+                row = new ShoppingListItem
+                {
+                    HouseholdId = household.HouseholdId,
+                    CatalogItemId = item?.Id,
+                    CustomName = item is null ? normalized : null,
+                    Quantity = item?.DefaultQuantity ?? 1,
+                    AddedByUserId = household.UserId
+                };
+                db.ShoppingListItems.Add(row);
+            }
+            else
+            {
+                row.Quantity += item?.DefaultQuantity ?? 1;
+                row.IsChecked = false;
+                row.CheckedAt = null;
+            }
 
-    public Task ToggleCheckedAsync(Guid shoppingListItemId, CancellationToken cancellationToken = default) =>
-        MutateRowAsync(shoppingListItemId, row =>
+            return item?.Id ?? row.Id;
+        }, cancellationToken);
+
+    public Task ToggleCheckedAsync(Guid shoppingListItemId, CancellationToken cancellationToken = default, Guid? operationId = null) =>
+        MutateRowAsync(nameof(ToggleCheckedAsync), operationId, shoppingListItemId, (db, row) =>
         {
             row.IsChecked = !row.IsChecked;
             row.CheckedAt = row.IsChecked ? DateTimeOffset.UtcNow : null;
         }, cancellationToken);
 
-    public Task ChangeQuantityAsync(Guid shoppingListItemId, decimal delta, CancellationToken cancellationToken = default) =>
-        MutateRowAsync(shoppingListItemId, row => row.Quantity = Math.Max(0.25m, row.Quantity + delta), cancellationToken);
-
-    public Task RemoveAsync(Guid shoppingListItemId, CancellationToken cancellationToken = default) =>
-        MutateRowAsync(shoppingListItemId, row => row.IsChecked = true, cancellationToken, remove: true);
-
-    public async Task AssignStoreAsync(Guid shoppingListItemId, Guid? storeId, CancellationToken cancellationToken = default)
-    {
-        var household = await RequireHouseholdAsync(cancellationToken);
-        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        if (storeId is Guid id && !await db.Stores.AnyAsync(x => x.Id == id && x.HouseholdId == household.HouseholdId && x.IsActive, cancellationToken))
+    public Task ChangeQuantityAsync(Guid shoppingListItemId, decimal delta, CancellationToken cancellationToken = default, Guid? operationId = null) =>
+        MutateRowAsync(nameof(ChangeQuantityAsync), operationId, shoppingListItemId, (db, row) =>
         {
-            throw new InvalidOperationException("That store is not available in this household.");
-        }
+            try { row.Quantity = Math.Max(0.25m, row.Quantity + delta); }
+            catch (OverflowException) { throw new ArgumentException("That quantity is too large."); }
+        }, cancellationToken);
 
-        var row = await db.ShoppingListItems.SingleOrDefaultAsync(
-            x => x.Id == shoppingListItemId && x.HouseholdId == household.HouseholdId,
-            cancellationToken) ?? throw new InvalidOperationException("That list item is not in this household.");
-        row.AssignedStoreId = storeId;
-        await db.SaveChangesAsync(cancellationToken);
-        notifier.Notify(household.HouseholdId);
-    }
+    public Task RemoveAsync(Guid shoppingListItemId, CancellationToken cancellationToken = default, Guid? operationId = null) =>
+        MutateRowAsync(nameof(RemoveAsync), operationId, shoppingListItemId, (db, row) => db.ShoppingListItems.Remove(row), cancellationToken);
 
-    public async Task<int> ClearCheckedAsync(CancellationToken cancellationToken = default)
-    {
-        var household = await RequireHouseholdAsync(cancellationToken);
-        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var checkedItems = await db.ShoppingListItems
-            .Where(x => x.HouseholdId == household.HouseholdId && x.IsChecked)
-            .ToListAsync(cancellationToken);
-
-        foreach (var row in checkedItems)
+    public Task AssignStoreAsync(Guid shoppingListItemId, Guid? storeId, CancellationToken cancellationToken = default, Guid? operationId = null) =>
+        ApplyAsync(nameof(AssignStoreAsync), operationId, async (db, household) =>
         {
-            if (row.CatalogItemId is not Guid catalogItemId) continue;
-            db.PurchaseHistory.Add(new PurchaseHistory
+            if (storeId is Guid id && !await db.Stores.AnyAsync(x => x.Id == id && x.HouseholdId == household.HouseholdId && x.IsActive, cancellationToken))
             {
-                HouseholdId = household.HouseholdId,
-                CatalogItemId = catalogItemId,
-                StoreId = row.AssignedStoreId,
-                Quantity = row.Quantity,
-                PurchasedAt = row.CheckedAt ?? DateTimeOffset.UtcNow,
-                PurchasedByUserId = household.UserId
-            });
-        }
+                throw new InvalidOperationException("That store is not available in this household.");
+            }
 
-        db.ShoppingListItems.RemoveRange(checkedItems);
-        await db.SaveChangesAsync(cancellationToken);
-        if (checkedItems.Count != 0)
+            var row = await FindRowAsync(db, household.HouseholdId, shoppingListItemId, cancellationToken);
+            row.AssignedStoreId = storeId;
+            return true;
+        }, cancellationToken);
+
+    public Task<int> ClearCheckedAsync(CancellationToken cancellationToken = default, Guid? operationId = null, IReadOnlyList<CheckedListRow>? rows = null) =>
+        ApplyAsync(nameof(ClearCheckedAsync), operationId, async (db, household) =>
         {
-            notifier.Notify(household.HouseholdId);
-        }
+            var query = db.ShoppingListItems.Where(x => x.HouseholdId == household.HouseholdId && x.IsChecked);
+            if (rows is not null)
+            {
+                var ids = rows.Select(x => x.Id).Distinct().ToArray();
+                query = query.Where(x => ids.Contains(x.Id));
+            }
 
-        return checkedItems.Count;
-    }
+            var checkedItems = await query.ToListAsync(cancellationToken);
+            if (rows is not null)
+            {
+                var selected = rows.ToHashSet();
+                checkedItems.RemoveAll(row => !selected.Contains(new CheckedListRow(row.Id, row.CheckedAt)));
+            }
 
-    private async Task MutateRowAsync(Guid rowId, Action<ShoppingListItem> mutation, CancellationToken cancellationToken, bool remove = false)
+            foreach (var row in checkedItems)
+            {
+                if (row.CatalogItemId is not Guid catalogItemId) continue;
+                db.PurchaseHistory.Add(new PurchaseHistory
+                {
+                    HouseholdId = household.HouseholdId,
+                    CatalogItemId = catalogItemId,
+                    StoreId = row.AssignedStoreId,
+                    Quantity = row.Quantity,
+                    PurchasedAt = row.CheckedAt ?? DateTimeOffset.UtcNow,
+                    PurchasedByUserId = household.UserId
+                });
+            }
+
+            db.ShoppingListItems.RemoveRange(checkedItems);
+            return checkedItems.Count;
+        }, cancellationToken);
+
+    private Task MutateRowAsync(string action, Guid? operationId, Guid rowId, Action<ApplicationDbContext, ShoppingListItem> mutation, CancellationToken cancellationToken) =>
+        ApplyAsync(action, operationId, async (db, household) =>
+        {
+            mutation(db, await FindRowAsync(db, household.HouseholdId, rowId, cancellationToken));
+            return true;
+        }, cancellationToken);
+
+    private static async Task<ShoppingListItem> FindRowAsync(ApplicationDbContext db, Guid householdId, Guid rowId, CancellationToken cancellationToken) =>
+        await db.ShoppingListItems.SingleOrDefaultAsync(x => x.Id == rowId && x.HouseholdId == householdId, cancellationToken)
+        ?? throw new InvalidOperationException("That list item is not in this household.");
+
+    private async Task<T> ApplyAsync<T>(string action, Guid? operationId,
+        Func<ApplicationDbContext, CurrentHouseholdContext, Task<T>> apply, CancellationToken cancellationToken)
     {
         var household = await RequireHouseholdAsync(cancellationToken);
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var row = await db.ShoppingListItems.SingleOrDefaultAsync(
-            x => x.Id == rowId && x.HouseholdId == household.HouseholdId,
-            cancellationToken) ?? throw new InvalidOperationException("That list item is not in this household.");
-        if (remove)
+        // SQLite serializes writers before reading the list or checking the receipt.
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        if (operationId is Guid id)
         {
-            db.ShoppingListItems.Remove(row);
-        }
-        else
-        {
-            mutation(row);
+            var receipt = await db.ShoppingListOperations.FindAsync([household.HouseholdId, household.UserId, id], cancellationToken);
+            if (receipt is not null)
+            {
+                if (receipt.Action != action) throw new ArgumentException("That operation ID was used for a different list action.");
+                return JsonSerializer.Deserialize<T>(receipt.Result)!;
+            }
         }
 
+        var result = await apply(db, household);
+        var listChanged = db.ChangeTracker.HasChanges();
+        if (operationId is Guid newId)
+            db.ShoppingListOperations.Add(new ShoppingListOperation
+            {
+                HouseholdId = household.HouseholdId, UserId = household.UserId, Id = newId,
+                Action = action, Result = JsonSerializer.Serialize(result)
+            });
+
         await db.SaveChangesAsync(cancellationToken);
-        notifier.Notify(household.HouseholdId);
+        await transaction.CommitAsync(cancellationToken);
+        if (listChanged) notifier.Notify(household.HouseholdId);
+        return result;
     }
 
     private async Task<CurrentHouseholdContext> RequireHouseholdAsync(CancellationToken cancellationToken) =>

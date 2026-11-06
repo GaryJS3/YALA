@@ -9,7 +9,7 @@ public sealed class OfflineSyncService(ApiClient api, OfflineQueue queue, Client
     public async Task<IReadOnlyList<QueuedMutation>> GetPendingAsync() =>
         (await queue.GetAsync()).Where(x => x.UserId == state.UserId && x.HouseholdId == state.CurrentHouseholdId).ToArray();
 
-    public async Task ExecuteAsync(string uri, object? body, Func<Task> send)
+    public async Task ExecuteAsync(string uri, object? body)
     {
         if (state.UserId is null || state.CurrentHouseholdId is not Guid householdId)
             throw new InvalidOperationException("Choose a household before changing the list.");
@@ -31,7 +31,7 @@ public sealed class OfflineSyncService(ApiClient api, OfflineQueue queue, Client
                 await FlushCoreAsync();
                 return;
             }
-            try { await send(); state.SetConnectivity(false, (await GetPendingAsync()).Count); }
+            try { await api.SendQueuedAsync(mutation); state.SetConnectivity(false, (await GetPendingAsync()).Count); }
             catch (Exception ex) when (IsConnectionFailure(ex))
             {
                 await queue.EnqueueAsync(mutation);
@@ -70,16 +70,27 @@ public sealed class OfflineSyncService(ApiClient api, OfflineQueue queue, Client
 
     public async Task RetryAsync(Guid operationId)
     {
-        var mutation = (await GetPendingAsync()).Single(x => x.OperationId == operationId);
-        mutation.Error = null;
-        await queue.EnqueueAsync(mutation);
-        await FlushAsync();
+        await gate.WaitAsync();
+        try
+        {
+            var mutation = (await GetPendingAsync()).FirstOrDefault(x => x.OperationId == operationId);
+            if (mutation is null) return;
+            mutation.Error = null;
+            await queue.EnqueueAsync(mutation);
+            await FlushCoreAsync();
+        }
+        finally { gate.Release(); }
     }
 
     public async Task DiscardAsync(Guid operationId)
     {
-        if ((await GetPendingAsync()).Any(x => x.OperationId == operationId)) await queue.RemoveAsync(operationId);
-        state.SetConnectivity(state.IsOffline, (await GetPendingAsync()).Count);
+        await gate.WaitAsync();
+        try
+        {
+            if ((await GetPendingAsync()).Any(x => x.OperationId == operationId)) await queue.RemoveAsync(operationId);
+            state.SetConnectivity(state.IsOffline, (await GetPendingAsync()).Count);
+        }
+        finally { gate.Release(); }
     }
 
     public static bool IsConnectionFailure(Exception ex) =>

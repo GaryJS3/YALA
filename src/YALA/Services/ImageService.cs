@@ -87,11 +87,11 @@ public sealed class ImageService(
         notifier.Notify(household.HouseholdId);
     }
 
-    public async Task SaveVariantImageUploadAsync(Guid variantId, Stream file, CancellationToken cancellationToken = default)
+    public async Task<Guid> SaveVariantImageUploadAsync(Guid variantId, Stream file, CancellationToken cancellationToken = default)
     {
         var household = await RequireHouseholdAsync(cancellationToken);
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var variant = await db.ProductVariants.SingleOrDefaultAsync(x => x.Id == variantId && x.HouseholdId == household.HouseholdId, cancellationToken)
+        var variant = await db.ProductVariants.SingleOrDefaultAsync(x => x.Id == variantId && x.HouseholdId == household.HouseholdId && !x.IsArchived, cancellationToken)
             ?? throw new InvalidOperationException("That product is not in this household.");
         var oldPath = variant.ImagePath;
         variant.ImagePath = await SaveStreamAsync(household.HouseholdId, "variants", file, cancellationToken);
@@ -99,6 +99,7 @@ public sealed class ImageService(
         catch { DeleteStoredImage(variant.ImagePath, household.HouseholdId, "variants"); throw; }
         DeleteStoredImage(oldPath, household.HouseholdId, "variants");
         notifier.Notify(household.HouseholdId);
+        return variant.CatalogItemId;
     }
 
     public async Task SaveStoreImageAsync(Guid storeId, IBrowserFile file, CancellationToken cancellationToken = default)

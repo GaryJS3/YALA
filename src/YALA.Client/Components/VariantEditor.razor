@@ -1,0 +1,128 @@
+@inject ApiClient Api
+
+<section class="variant-entry" aria-label="Exact product editor">
+    <h3>@(Variant is null ? "Add an exact product" : $"Edit {Variant.Name}")</h3>
+    @if (error is not null) { <p class="notice error" role="alert">@error</p> }
+    <form @onsubmit="SaveAsync" @onsubmit:preventDefault>
+        <fieldset disabled="@saving">
+            <div class="form-grid">
+                <div class="form-field"><label for="variant-name">Product name</label><input id="variant-name" @bind="name" @bind:event="oninput" maxlength="200" required /></div>
+                <div class="form-field"><label for="variant-brand">Brand</label><input id="variant-brand" @bind="brand" @bind:event="oninput" /></div>
+                <div class="form-field"><label for="variant-size">Size</label><input id="variant-size" @bind="size" @bind:event="oninput" /></div>
+                <div class="form-field"><label for="variant-barcodes">Barcodes (one per line)</label><textarea id="variant-barcodes" @bind="barcodes" @bind:event="oninput" rows="2"></textarea></div>
+            </div>
+            <BarcodeScanner OnDetected="BarcodeDetectedAsync" />
+            <button type="button" class="button button-outline" @onclick="LookUpFirstBarcodeAsync" disabled="@(lookingUp || ReadBarcodes().Length == 0)">@(lookingUp ? "Looking up…" : "Look up first barcode")</button>
+            @if (lookupMessage is not null) { <p class="notice" role="status">@lookupMessage</p> }
+            <div class="item-toggle-row"><label><input type="checkbox" @bind="preferred" /> Preferred product</label></div>
+            @if (Stores.Count > 0)
+            {
+                <fieldset class="variant-stores">
+                    <legend>Stores carrying this product</legend>
+                    <div class="store-check-grid">
+                        @foreach (var store in Stores)
+                        {
+                            <label @key="store.Id" class="store-check @(storeIds.Contains(store.Id) ? "selected" : "")">
+                                <input type="checkbox" checked="@storeIds.Contains(store.Id)" @onchange="e => SetStore(store.Id, e.Value is true)" />
+                                <span class="store-check-mark" aria-hidden="true">✓</span>
+                                <StoreMark Name="@store.Name" ImagePath="@store.ImagePath" ShowName="true" />
+                            </label>
+                        }
+                    </div>
+                </fieldset>
+            }
+            <div class="detail-inline-form">
+                <button type="submit" class="button button-primary" disabled="@lookingUp">@(saving ? "Saving…" : Variant is null ? "Add product" : "Save product")</button>
+                @if (Variant is not null) { <button type="button" class="button button-outline" @onclick="OnCancel">Cancel product edit</button> }
+            </div>
+        </fieldset>
+    </form>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public Guid ItemId { get; set; }
+    [Parameter, EditorRequired] public IReadOnlyList<ItemStoreAvailability> Stores { get; set; } = [];
+    [Parameter] public VariantEntry? Variant { get; set; }
+    [Parameter] public EventCallback OnSaved { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private readonly HashSet<Guid> storeIds = [];
+    private string name = "", brand = "", size = "", barcodes = "";
+    private string? error, lookupMessage;
+    private bool preferred, saving, lookingUp;
+
+    protected override void OnInitialized()
+    {
+        if (Variant is null) return;
+        name = Variant.Name;
+        brand = Variant.Brand ?? "";
+        size = Variant.Size ?? "";
+        preferred = Variant.IsPreferred;
+        barcodes = string.Join("\n", Variant.Barcodes.Select(x => x.Barcode));
+        storeIds.UnionWith(Variant.StoreIds);
+    }
+
+    private string[] ReadBarcodes() => barcodes.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+
+    private void SetStore(Guid id, bool available)
+    {
+        if (available) storeIds.Add(id);
+        else storeIds.Remove(id);
+    }
+
+    private async Task BarcodeDetectedAsync(string barcode)
+    {
+        if (saving || lookingUp) return;
+        var codes = ReadBarcodes();
+        if (!codes.Contains(barcode, StringComparer.OrdinalIgnoreCase))
+            barcodes = string.Join("\n", codes.Append(barcode));
+        await LookUpAsync(barcode);
+    }
+
+    private Task LookUpFirstBarcodeAsync() => LookUpAsync(ReadBarcodes().FirstOrDefault());
+
+    private async Task LookUpAsync(string? barcode)
+    {
+        if (barcode is null || lookingUp) return;
+        error = lookupMessage = null;
+        lookingUp = true;
+        try
+        {
+            var product = await Api.LookupProductAsync(barcode);
+            if (product is null)
+            {
+                lookupMessage = "No match found. You can enter the product details and save this barcode.";
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(name)) name = product.Name ?? "";
+            if (string.IsNullOrWhiteSpace(brand)) brand = product.Brand ?? "";
+            if (string.IsNullOrWhiteSpace(size)) size = product.Size ?? "";
+            lookupMessage = $"Found {product.Name ?? "a product"}. Review the details before saving.";
+        }
+        catch (Exception ex) { error = ex.Message; }
+        finally { lookingUp = false; }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (saving || lookingUp) return;
+        saving = true;
+        error = null;
+        try
+        {
+            await Api.SaveVariantAsync(new VariantSaveRequest
+            {
+                Id = Variant?.Id, ItemId = ItemId, Name = name, Brand = brand, Size = size,
+                Preferred = preferred, Barcodes = [.. ReadBarcodes()], StoreIds = [.. storeIds]
+            });
+            name = brand = size = barcodes = "";
+            preferred = false;
+            storeIds.Clear();
+            lookupMessage = null;
+            await OnSaved.InvokeAsync();
+        }
+        catch (Exception ex) { error = ex.Message; }
+        finally { saving = false; }
+    }
+}

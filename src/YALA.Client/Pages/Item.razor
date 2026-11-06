@@ -7,10 +7,16 @@
 
 <PageTitle>@(details?.Name ?? (Id is null ? "New item" : "Item")) · YALA</PageTitle>
 <nav class="item-breadcrumb" aria-label="Breadcrumb"><a href="/catalog">Catalog</a><span>/</span><span>@(details?.Name ?? "New item")</span></nav>
+@if (!string.IsNullOrWhiteSpace(error)) { <p class="notice error" role="alert">@error</p> }
+@if (!string.IsNullOrWhiteSpace(message)) { <p class="notice" role="status">@message</p> }
 
 @if (loading)
 {
     <div class="loading-surface"><span class="spinner"></span> Loading item…</div>
+}
+else if (loadFailed)
+{
+    <button type="button" class="button button-outline" @onclick="LoadAsync">Try again</button>
 }
 else if (Id is not null && details is null)
 {
@@ -49,9 +55,6 @@ else
         </div>
     </section>
 
-    @if (!string.IsNullOrWhiteSpace(error)) { <p class="notice error" role="alert">@error</p> }
-    @if (!string.IsNullOrWhiteSpace(message)) { <p class="notice" role="status">@message</p> }
-
     @if (editing)
     {
         <section class="content-card item-edit-card">
@@ -67,7 +70,7 @@ else
                 <div class="item-toggle-row"><label><input type="checkbox" @bind="favorite" /> <span>★</span> Keep in favorites</label><label><input type="checkbox" @bind="archived" /> Archive this item</label></div>
             }
             <div class="item-edit-actions">
-                @if (Id is not null) { <button type="button" class="button button-outline" @onclick="CancelEdit">Discard changes</button> }
+                @if (Id is not null) { <button type="button" class="button button-outline" disabled="@saving" @onclick="CancelEdit">Discard item details</button> }
                 else { <button type="button" class="button button-outline" @onclick="CancelNew">Cancel</button> }
                 <button type="button" class="button button-primary" disabled="@saving" @onclick="SaveAsync">@(saving ? "Saving…" : Id is null ? "Create item" : "Save changes") <span>↗</span></button>
             </div>
@@ -103,10 +106,50 @@ else
         <section class="content-card item-section item-products">
             <div class="section-heading"><div><p class="eyebrow">BRANDS, SIZES & BARCODES</p><h2>Exact products</h2></div><span class="item-section-count">@details.Variants.Count</span></div>
             @if (details.Variants.Count == 0) { <p class="detail-empty">Add an exact product when the brand or size matters.</p> }
-            <div class="product-grid">@foreach (var variant in details.Variants) { <article class="product-card">@if (!string.IsNullOrWhiteSpace(variant.ImagePath)) { <ImageLightbox Src="@($"/images/{variant.ImagePath}")" Alt="@variant.Name" TriggerClass="product-card-image" Loading="lazy" /> } else { <div class="product-placeholder">◇</div> }<div class="variant-title"><strong>@variant.Name</strong>@if (variant.IsPreferred) { <span class="badge">Preferred</span> }</div>@if (!string.IsNullOrWhiteSpace(variant.Brand) || !string.IsNullOrWhiteSpace(variant.Size)) { <small>@variant.Brand @variant.Size</small> }<div class="barcode-list">@foreach (var barcode in variant.Barcodes) { <span class="barcode-chip">@barcode.Barcode</span> }</div>@if (editing) { <button type="button" class="text-button remove-variant-action" @onclick="() => RemoveVariantAsync(variant.Id)">Remove product</button> }</article> }</div>
+            <div class="product-grid">
+                @foreach (var variant in details.Variants)
+                {
+                    <article @key="variant.Id" class="product-card">
+                        @if (!string.IsNullOrWhiteSpace(variant.ImagePath))
+                        {
+                            <ImageLightbox Src="@($"/images/{variant.ImagePath}")" Alt="@variant.Name" TriggerClass="product-card-image" Loading="lazy" />
+                        }
+                        else { <div class="product-placeholder" aria-hidden="true">◇</div> }
+                        <div class="variant-title"><strong>@variant.Name</strong>@if (variant.IsPreferred) { <span class="badge">Preferred</span> }</div>
+                        @if (!string.IsNullOrWhiteSpace(variant.Brand) || !string.IsNullOrWhiteSpace(variant.Size)) { <small>@variant.Brand @variant.Size</small> }
+                        <div class="barcode-list">@foreach (var barcode in variant.Barcodes) { <span class="barcode-chip">@barcode.Barcode</span> }</div>
+                        <div class="item-store-summary" aria-label="Stores carrying @variant.Name">
+                            @foreach (var store in details.Stores.Where(store => variant.StoreIds.Contains(store.Id)))
+                            {
+                                <StoreMark Name="@store.Name" ImagePath="@store.ImagePath" ShowName="true" />
+                            }
+                        </div>
+                        @if (editing)
+                        {
+                            <div class="variant-actions">
+                                <button type="button" class="text-button" @onclick="() => SelectVariant(variant)" aria-label="Edit @variant.Name">Edit product</button>
+                                @if (confirmVariantRemoval == variant.Id)
+                                {
+                                    <span>Remove this product?</span>
+                                    <button type="button" class="text-button remove-variant-action" disabled="@removingVariant" @onclick="() => RemoveVariantAsync(variant.Id)">Remove</button>
+                                    <button type="button" class="text-button" @onclick="() => confirmVariantRemoval = null">Keep</button>
+                                }
+                                else
+                                {
+                                    <button type="button" class="text-button remove-variant-action" @onclick="() => confirmVariantRemoval = variant.Id">Remove product</button>
+                                }
+                                <label class="variant-upload">@(variant.ImagePath is null ? "Add product photo" : "Replace product photo")
+                                    <InputFile accept="image/jpeg,image/png,image/webp" disabled="@uploadingVariant" OnChange="args => UploadVariantImageAsync(variant.Id, args.File)" />
+                                </label>
+                            </div>
+                        }
+                    </article>
+                }
+            </div>
             @if (editing)
             {
-                <div class="variant-entry"><h3>Add an exact product</h3><BarcodeScanner OnDetected="BarcodeDetectedAsync" /><div class="form-grid"><div class="form-field"><label>Product name</label><input @bind="variantName" /></div><div class="form-field"><label>Brand</label><input @bind="variantBrand" /></div><div class="form-field"><label>Size</label><input @bind="variantSize" /></div><div class="form-field"><label>Barcode</label><input @bind="variantBarcode" inputmode="numeric" /></div></div><div class="detail-inline-form"><button type="button" class="button button-outline" @onclick="LookupAsync" disabled="@lookingUp">@(lookingUp ? "Looking up…" : "Look up barcode")</button><button type="button" class="button button-primary" @onclick="AddVariantAsync">Add product <span>+</span></button></div>@if (lookup is not null) { <p class="notice" role="status">Found: @(lookup.Name ?? "Product")@(string.IsNullOrWhiteSpace(lookup.Brand) ? "" : $" · {lookup.Brand}")</p> }</div>
+                <VariantEditor @key="(details.Id, selectedVariant?.Id)" ItemId="details.Id" Stores="details.Stores" Variant="selectedVariant"
+                               OnSaved="VariantSavedAsync" OnCancel="() => SelectVariant(null)" />
             }
         </section>
     }
@@ -121,18 +164,30 @@ else
     private Guid? categoryId;
     private string name = "", description = "", alias = "", message = "", error = "";
     private decimal quantity = 1;
-    private bool favorite, archived, loading = true, editing, saving, lookingUp;
-    private string variantName = "", variantBrand = "", variantSize = "", variantBarcode = "";
-    private ProductLookupResult? lookup;
+    private bool favorite, archived, loading = true, editing, saving, loadFailed, uploadingVariant, removingVariant;
+    private VariantEntry? selectedVariant;
+    private Guid? confirmVariantRemoval;
+    private long loadVersion;
 
-    protected override async Task OnParametersSetAsync()
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
     {
+        var version = ++loadVersion;
+        var id = Id;
         loading = true;
+        loadFailed = false;
         error = message = "";
-        categories = (await Api.GetCatalogFormOptionsAsync()).Categories;
-        if (Id is Guid id)
+        alias = "";
+        selectedVariant = null;
+        confirmVariantRemoval = null;
+        try
         {
-            details = await Api.GetCatalogDetailsAsync(id);
+            var item = id is null ? null : await Api.GetCatalogDetailsAsync(id);
+            var options = id is null || item is not null ? await Api.GetCatalogFormOptionsAsync() : null;
+            if (version != loadVersion) return;
+            details = item;
+            categories = options?.Categories ?? [];
             if (details is not null)
             {
                 name = details.Name;
@@ -142,18 +197,20 @@ else
                 favorite = details.IsFavorite;
                 archived = details.IsArchived;
             }
-            editing = EditOnLoad;
+            else
+            {
+                name = description = "";
+                categoryId = null;
+                quantity = 1;
+                favorite = archived = false;
+            }
+            editing = id is null || EditOnLoad;
         }
-        else
+        catch (Exception ex)
         {
-            details = null;
-            name = description = alias = "";
-            categoryId = null;
-            quantity = 1;
-            favorite = archived = false;
-            editing = true;
+            if (version == loadVersion) { loadFailed = true; error = ex.Message; }
         }
-        loading = false;
+        finally { if (version == loadVersion) loading = false; }
     }
 
     private void BeginEdit()
@@ -183,8 +240,9 @@ else
             favorite = details.IsFavorite;
             archived = details.IsArchived;
         }
-        alias = variantName = variantBrand = variantSize = variantBarcode = "";
-        lookup = null;
+        alias = "";
+        selectedVariant = null;
+        confirmVariantRemoval = null;
         error = message = "";
         EditOnLoad = false;
         editing = false;
@@ -194,19 +252,27 @@ else
 
     private async Task SaveAsync()
     {
+        if (saving) return;
         saving = true;
         error = "";
         try
         {
-            var savedId = await Api.SaveCatalogItemAsync(new CatalogSaveRequest { Id = Id, Name = name, Description = description, CategoryId = categoryId, DefaultQuantity = quantity });
+            var savedId = await Api.SaveCatalogItemAsync(new CatalogSaveRequest
+            {
+                Id = Id, Name = name, Description = description, CategoryId = categoryId, DefaultQuantity = quantity,
+                IsFavorite = favorite, IsArchived = archived
+            });
             if (savedId is not Guid id) throw new InvalidOperationException("The item was saved without an id.");
-            await Api.SetCatalogFavoriteAsync(id, favorite);
-            await Api.SetCatalogArchivedAsync(id, archived);
-            details = await Api.GetCatalogDetailsAsync(id);
+            var editInUrl = EditOnLoad && !string.IsNullOrEmpty(new Uri(Navigation.Uri).Query);
             EditOnLoad = false;
             editing = false;
-            message = "Item changes saved.";
-            Navigation.NavigateTo($"/catalog/item/{id}", replace: true);
+            if (Id != id) Navigation.NavigateTo($"/catalog/item/{id}", replace: true);
+            else
+            {
+                details = await Api.GetCatalogDetailsAsync(id);
+                message = "Item changes saved.";
+                if (editInUrl) Navigation.NavigateTo(Navigation.GetUriWithQueryParameter("edit", (bool?)null), replace: true);
+            }
         }
         catch (Exception ex) { error = ex.Message; }
         finally { saving = false; }
@@ -235,27 +301,43 @@ else
 
     private async Task RemoveAliasAsync(Guid aliasId) { try { await Api.RemoveAliasAsync(aliasId); details = await Api.GetCatalogDetailsAsync(Id); } catch (Exception ex) { error = ex.Message; } }
 
-    private async Task BarcodeDetectedAsync(string barcode)
+    private void SelectVariant(VariantEntry? variant)
     {
-        variantBarcode = barcode;
-        await LookupAsync();
+        selectedVariant = variant;
+        confirmVariantRemoval = null;
     }
 
-    private async Task LookupAsync()
+    private async Task VariantSavedAsync()
     {
-        if (string.IsNullOrWhiteSpace(variantBarcode)) return;
-        lookingUp = true;
-        try { lookup = await Api.LookupProductAsync(variantBarcode); if (lookup is not null) { variantName = lookup.Name ?? variantName; variantBrand = lookup.Brand ?? variantBrand; variantSize = lookup.Size ?? variantSize; } }
+        SelectVariant(null);
+        try { details = await Api.GetCatalogDetailsAsync(Id); error = ""; message = "Product saved."; }
+        catch (Exception ex) { error = $"Product saved. The item could not be refreshed. {ex.Message}"; }
+    }
+
+    private async Task UploadVariantImageAsync(Guid variantId, IBrowserFile file)
+    {
+        if (uploadingVariant) return;
+        uploadingVariant = true;
+        error = message = "";
+        try { await Api.UploadVariantImageAsync(variantId, file); details = await Api.GetCatalogDetailsAsync(Id); message = "Product photo saved."; }
         catch (Exception ex) { error = ex.Message; }
-        finally { lookingUp = false; }
+        finally { uploadingVariant = false; }
     }
 
-    private async Task AddVariantAsync()
+    private async Task RemoveVariantAsync(Guid variantId)
     {
-        if (Id is not Guid id || string.IsNullOrWhiteSpace(variantName)) return;
-        try { await Api.SaveVariantAsync(new VariantSaveRequest { ItemId = id, Name = variantName, Brand = variantBrand, Size = variantSize, Barcode = variantBarcode }); variantName = variantBrand = variantSize = variantBarcode = ""; lookup = null; details = await Api.GetCatalogDetailsAsync(id); }
+        if (removingVariant) return;
+        removingVariant = true;
+        error = message = "";
+        try
+        {
+            await Api.RemoveVariantAsync(variantId);
+            if (selectedVariant?.Id == variantId) SelectVariant(null);
+            confirmVariantRemoval = null;
+            details = await Api.GetCatalogDetailsAsync(Id);
+            message = "Product removed.";
+        }
         catch (Exception ex) { error = ex.Message; }
+        finally { removingVariant = false; }
     }
-
-    private async Task RemoveVariantAsync(Guid variantId) { try { await Api.RemoveVariantAsync(variantId); details = await Api.GetCatalogDetailsAsync(Id); } catch (Exception ex) { error = ex.Message; } }
 }

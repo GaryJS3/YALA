@@ -10,7 +10,7 @@
 
 @inject UserManager<ApplicationUser> UserManager
 @inject SignInManager<ApplicationUser> SignInManager
-@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject ApplicationDbContext Db
 @inject IdentityRedirectManager RedirectManager
 
 <PageTitle>Set up YALA</PageTitle>
@@ -28,7 +28,7 @@
         {
             <p class="eyebrow">YALA IS ALREADY SET UP</p>
             <h2>Welcome back.</h2>
-            <p class="muted-copy">New accounts are created from Household settings by someone who already belongs to a list.</p>
+            <p class="muted-copy">An administrator can create new accounts from the Users page.</p>
             <a class="button button-primary" href="/Account/Login">Log in <span>↗</span></a>
         }
         else
@@ -79,16 +79,19 @@
 
     private async Task CreateFirstUserAsync()
     {
+        await using var transaction = await Db.Database.BeginTransactionAsync();
         if (await UserManager.Users.AnyAsync())
         {
             alreadyConfigured = true;
             return;
         }
 
+        var household = new Household { Name = input.HouseholdName.Trim() };
         var user = new ApplicationUser
         {
             UserName = input.UserName.Trim(),
             DisplayName = input.DisplayName.Trim(),
+            DefaultHouseholdId = household.Id,
             IsAdministrator = true
         };
         var result = await UserManager.CreateAsync(user, input.Password);
@@ -98,19 +101,14 @@
             return;
         }
 
-        var household = new Household { Name = input.HouseholdName.Trim() };
-        user.DefaultHouseholdId = household.Id;
-        await UserManager.UpdateAsync(user);
-        await using (var db = await DbFactory.CreateDbContextAsync())
+        Db.Households.Add(household);
+        Db.HouseholdMembers.Add(new HouseholdMember { HouseholdId = household.Id, UserId = user.Id });
+        for (var index = 0; index < HouseholdService.DefaultCategories.Length; index++)
         {
-            db.Households.Add(household);
-            db.HouseholdMembers.Add(new HouseholdMember { HouseholdId = household.Id, UserId = user.Id });
-            for (var index = 0; index < HouseholdService.DefaultCategories.Length; index++)
-            {
-                db.Categories.Add(new Category { HouseholdId = household.Id, Name = HouseholdService.DefaultCategories[index], SortOrder = index });
-            }
-            await db.SaveChangesAsync();
+            Db.Categories.Add(new Category { HouseholdId = household.Id, Name = HouseholdService.DefaultCategories[index], SortOrder = index });
         }
+        await Db.SaveChangesAsync();
+        await transaction.CommitAsync();
 
         await SignInManager.SignInAsync(user, isPersistent: true);
         RedirectManager.RedirectTo("/");

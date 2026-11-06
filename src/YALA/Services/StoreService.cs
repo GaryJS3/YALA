@@ -71,9 +71,12 @@ public sealed class StoreService(IDbContextFactory<ApplicationDbContext> dbConte
     public async Task SaveStoreAsync(Guid? id, string name, CancellationToken cancellationToken = default)
     {
         var household = await RequireHouseholdAsync(cancellationToken);
-        var cleanName = name.Trim();
+        var cleanName = name?.Trim() ?? "";
         if (cleanName.Length is < 1 or > 80) throw new ArgumentException("Store names must be between 1 and 80 characters.");
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
+        if (await db.Stores.AnyAsync(x => x.HouseholdId == household.HouseholdId && x.Id != id && x.Name == cleanName, cancellationToken))
+            throw new ArgumentException("A store with that name already exists in this household.");
         Store store;
         if (id is Guid storeId)
         {
@@ -88,6 +91,7 @@ public sealed class StoreService(IDbContextFactory<ApplicationDbContext> dbConte
 
         store.Name = cleanName;
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         notifier.Notify(household.HouseholdId);
     }
 

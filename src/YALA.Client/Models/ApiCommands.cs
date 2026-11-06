@@ -9,6 +9,8 @@ public sealed record HouseholdNameCommand(string Name);
 public sealed record ListItemCommand(Guid CatalogItemId);
 public sealed record QuickAddCommand(string Name);
 public sealed record ListRowCommand(Guid Id);
+public sealed record CheckedListRow(Guid Id, DateTimeOffset? CheckedAt);
+public sealed record ClearCheckedCommand(IReadOnlyList<CheckedListRow> Rows);
 public sealed record QuantityCommand(Guid Id, decimal Delta);
 public sealed record AssignStoreCommand(Guid Id, Guid? StoreId);
 public sealed record AliasCommand(Guid ItemId, string Alias);

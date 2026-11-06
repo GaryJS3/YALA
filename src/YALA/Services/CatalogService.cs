@@ -194,30 +194,25 @@ public sealed class CatalogService(IDbContextFactory<ApplicationDbContext> dbCon
     }
 
     public async Task<Guid> SaveVariantAsync(Guid itemId, string name, string? brand, string? size, bool preferred, string? barcode = null,
-        IReadOnlyCollection<Guid>? storeIds = null, CancellationToken cancellationToken = default)
+        IReadOnlyCollection<Guid>? storeIds = null, CancellationToken cancellationToken = default, IReadOnlyCollection<string>? barcodes = null)
     {
         var household = await RequireHouseholdAsync(cancellationToken);
-        var cleanName = name.Trim();
+        var cleanName = name?.Trim() ?? "";
         if (cleanName.Length is < 1 or > 200) throw new ArgumentException("Product names must be between 1 and 200 characters.");
-        var cleanBarcode = string.IsNullOrWhiteSpace(barcode) ? null : new string(barcode.Where(char.IsLetterOrDigit).ToArray());
-        if (cleanBarcode is not null && (cleanBarcode.Length is < 4 or > 64)) throw new ArgumentException("Enter a barcode with 4 to 64 letters or numbers.");
+        var cleanBarcodes = NormalizeBarcodes((barcodes ?? []).Append(barcode));
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         if (!await db.CatalogItems.AnyAsync(x => x.Id == itemId && x.HouseholdId == household.HouseholdId, cancellationToken))
             throw new InvalidOperationException("That item is not in this household.");
-        var selectedStoreIds = storeIds?.Distinct().ToArray() ?? [];
-        if (selectedStoreIds.Length > 0)
-        {
-            var validStoreCount = await db.Stores.CountAsync(x => x.HouseholdId == household.HouseholdId && selectedStoreIds.Contains(x.Id), cancellationToken);
-            if (validStoreCount != selectedStoreIds.Length) throw new InvalidOperationException("One or more selected stores are not in this household.");
-        }
+        var selectedStoreIds = await ValidateVariantStoresAsync(db, household.HouseholdId, storeIds ?? [], cancellationToken);
         if (preferred)
         {
             var otherVariants = await db.ProductVariants.Where(x => x.HouseholdId == household.HouseholdId && x.CatalogItemId == itemId).ToListAsync(cancellationToken);
             foreach (var variant in otherVariants) variant.IsPreferred = false;
         }
 
-        if (cleanBarcode is not null && await db.ProductBarcodes.AnyAsync(x => x.HouseholdId == household.HouseholdId && x.Barcode == cleanBarcode, cancellationToken))
-            throw new InvalidOperationException("That barcode is already recorded in this household.");
+        if (cleanBarcodes.Length > 0 && await db.ProductBarcodes.AnyAsync(x => x.HouseholdId == household.HouseholdId && cleanBarcodes.Contains(x.Barcode), cancellationToken))
+            throw new InvalidOperationException("One or more barcodes are already recorded in this household.");
 
         var product = new ProductVariant
         {
@@ -229,7 +224,7 @@ public sealed class CatalogService(IDbContextFactory<ApplicationDbContext> dbCon
             IsPreferred = preferred
         };
         db.ProductVariants.Add(product);
-        if (cleanBarcode is not null)
+        foreach (var cleanBarcode in cleanBarcodes)
         {
             db.ProductBarcodes.Add(new ProductBarcode { HouseholdId = household.HouseholdId, ProductVariantId = product.Id, Barcode = cleanBarcode });
         }
@@ -244,25 +239,21 @@ public sealed class CatalogService(IDbContextFactory<ApplicationDbContext> dbCon
             });
         }
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        notifier.Notify(household.HouseholdId);
         return product.Id;
     }
 
     public async Task UpdateVariantAsync(Guid variantId, string name, string? brand, string? size, bool preferred,
-        IReadOnlyCollection<string>? barcodes = null, CancellationToken cancellationToken = default)
+        IReadOnlyCollection<string>? barcodes = null, CancellationToken cancellationToken = default, IReadOnlyCollection<Guid>? storeIds = null)
     {
         var household = await RequireHouseholdAsync(cancellationToken);
-        var cleanName = name.Trim();
+        var cleanName = name?.Trim() ?? "";
         if (cleanName.Length is < 1 or > 200) throw new ArgumentException("Product names must be between 1 and 200 characters.");
 
-        var cleanBarcodes = (barcodes ?? [])
-            .Select(barcode => new string(barcode.Where(char.IsLetterOrDigit).ToArray()))
-            .Where(barcode => barcode.Length > 0)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        if (cleanBarcodes.Any(barcode => barcode.Length is < 4 or > 64))
-            throw new ArgumentException("Enter barcodes with 4 to 64 letters or numbers.");
-
+        var cleanBarcodes = NormalizeBarcodes(barcodes ?? []);
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
         var product = await db.ProductVariants.SingleOrDefaultAsync(x => x.Id == variantId && x.HouseholdId == household.HouseholdId && !x.IsArchived, cancellationToken)
             ?? throw new InvalidOperationException("That product is not in this household.");
 
@@ -283,12 +274,51 @@ public sealed class CatalogService(IDbContextFactory<ApplicationDbContext> dbCon
         foreach (var barcode in cleanBarcodes.Where(x => !existingBarcodes.Any(existing => string.Equals(existing.Barcode, x, StringComparison.OrdinalIgnoreCase))))
             db.ProductBarcodes.Add(new ProductBarcode { HouseholdId = household.HouseholdId, ProductVariantId = variantId, Barcode = barcode });
 
+        if (storeIds is not null)
+        {
+            var selectedStoreIds = await ValidateVariantStoresAsync(db, household.HouseholdId, storeIds, cancellationToken);
+            var offers = await db.StoreOffers.Where(x => x.HouseholdId == household.HouseholdId && x.ProductVariantId == variantId)
+                .ToListAsync(cancellationToken);
+            foreach (var offer in offers)
+            {
+                var available = selectedStoreIds.Remove(offer.StoreId);
+                if (offer.IsAvailable == available) continue;
+                offer.IsAvailable = available;
+                offer.UpdatedAt = DateTimeOffset.UtcNow;
+            }
+            foreach (var storeId in selectedStoreIds)
+                db.StoreOffers.Add(new StoreOffer
+                {
+                    HouseholdId = household.HouseholdId, CatalogItemId = product.CatalogItemId, StoreId = storeId, ProductVariantId = variantId
+                });
+        }
+
         product.Name = cleanName;
         product.Brand = string.IsNullOrWhiteSpace(brand) ? null : brand.Trim();
         product.Size = string.IsNullOrWhiteSpace(size) ? null : size.Trim();
         product.IsPreferred = preferred;
         await db.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         notifier.Notify(household.HouseholdId);
+    }
+
+    private static string[] NormalizeBarcodes(IEnumerable<string?> barcodes)
+    {
+        var normalized = barcodes.Where(barcode => !string.IsNullOrWhiteSpace(barcode))
+            .Select(barcode => new string(barcode!.Where(char.IsLetterOrDigit).ToArray()))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (normalized.Any(barcode => barcode.Length is < 4 or > 64))
+            throw new ArgumentException("Enter barcodes with 4 to 64 letters or numbers.");
+        return normalized;
+    }
+
+    private static async Task<HashSet<Guid>> ValidateVariantStoresAsync(ApplicationDbContext db, Guid householdId,
+        IReadOnlyCollection<Guid> storeIds, CancellationToken cancellationToken)
+    {
+        var selected = storeIds.ToHashSet();
+        if (selected.Count > 0 && await db.Stores.CountAsync(x => x.HouseholdId == householdId && selected.Contains(x.Id), cancellationToken) != selected.Count)
+            throw new InvalidOperationException("One or more selected stores are not in this household.");
+        return selected;
     }
 
     public async Task SetVariantStoreAvailabilityAsync(Guid variantId, Guid storeId, bool isAvailable, CancellationToken cancellationToken = default)
@@ -296,7 +326,7 @@ public sealed class CatalogService(IDbContextFactory<ApplicationDbContext> dbCon
         var household = await RequireHouseholdAsync(cancellationToken);
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         var variant = await db.ProductVariants.AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Id == variantId && x.HouseholdId == household.HouseholdId, cancellationToken)
+            .SingleOrDefaultAsync(x => x.Id == variantId && x.HouseholdId == household.HouseholdId && !x.IsArchived, cancellationToken)
             ?? throw new InvalidOperationException("That product is not in this household.");
         if (!await db.Stores.AnyAsync(x => x.Id == storeId && x.HouseholdId == household.HouseholdId, cancellationToken))
             throw new InvalidOperationException("That store is not in this household.");
@@ -368,11 +398,12 @@ public sealed class CatalogService(IDbContextFactory<ApplicationDbContext> dbCon
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<Guid> SaveAsync(Guid? id, string name, string? description, Guid? categoryId, decimal defaultQuantity, CancellationToken cancellationToken = default)
+    public async Task<Guid> SaveAsync(Guid? id, string name, string? description, Guid? categoryId, decimal defaultQuantity,
+        CancellationToken cancellationToken = default, bool? favorite = null, bool? archived = null)
     {
         var household = await householdService.GetCurrentAsync(cancellationToken)
             ?? throw new InvalidOperationException("Choose a household before editing catalog items.");
-        var cleanName = name.Trim();
+        var cleanName = name?.Trim() ?? "";
         if (cleanName.Length is < 1 or > 120 || defaultQuantity <= 0)
         {
             throw new ArgumentException("Enter an item name and a quantity greater than zero.");
@@ -400,6 +431,8 @@ public sealed class CatalogService(IDbContextFactory<ApplicationDbContext> dbCon
         item.Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
         item.CategoryId = categoryId;
         item.DefaultQuantity = defaultQuantity;
+        if (favorite is bool isFavorite) item.IsFavorite = isFavorite;
+        if (archived is bool isArchived) SetArchiveState(db, item, isArchived);
         item.UpdatedAt = DateTimeOffset.UtcNow;
         await db.SaveChangesAsync(cancellationToken);
         notifier.Notify(household.HouseholdId);
@@ -461,15 +494,18 @@ public sealed class CatalogService(IDbContextFactory<ApplicationDbContext> dbCon
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         var item = await db.CatalogItems.SingleOrDefaultAsync(x => x.Id == id && x.HouseholdId == household.HouseholdId, cancellationToken)
             ?? throw new InvalidOperationException("That item is not in this household.");
-        item.IsArchived = archived;
+        SetArchiveState(db, item, archived);
         item.UpdatedAt = DateTimeOffset.UtcNow;
-        if (archived)
-        {
-            db.ShoppingListItems.RemoveRange(db.ShoppingListItems.Where(x => x.HouseholdId == household.HouseholdId && x.CatalogItemId == id));
-        }
 
         await db.SaveChangesAsync(cancellationToken);
         notifier.Notify(household.HouseholdId);
+    }
+
+    private static void SetArchiveState(ApplicationDbContext db, CatalogItem item, bool archived)
+    {
+        item.IsArchived = archived;
+        if (archived)
+            db.ShoppingListItems.RemoveRange(db.ShoppingListItems.Where(x => x.HouseholdId == item.HouseholdId && x.CatalogItemId == item.Id));
     }
 
     private async Task<CurrentHouseholdContext> RequireHouseholdAsync(CancellationToken cancellationToken) =>

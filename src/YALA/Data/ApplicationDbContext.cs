@@ -19,6 +19,7 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
     public DbSet<PriceHistory> PriceHistory => Set<PriceHistory>();
     public DbSet<ShoppingListItem> ShoppingListItems => Set<ShoppingListItem>();
     public DbSet<PurchaseHistory> PurchaseHistory => Set<PurchaseHistory>();
+    public DbSet<ShoppingListOperation> ShoppingListOperations => Set<ShoppingListOperation>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -39,6 +40,9 @@ public class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options
         builder.Entity<HouseholdMember>().HasKey(x => new { x.HouseholdId, x.UserId });
         builder.Entity<HouseholdMember>().HasOne(x => x.Household).WithMany(x => x.Members).HasForeignKey(x => x.HouseholdId).OnDelete(DeleteBehavior.Cascade);
         builder.Entity<HouseholdMember>().HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
+        builder.Entity<ShoppingListOperation>().HasKey(x => new { x.HouseholdId, x.UserId, x.Id });
+        builder.Entity<ShoppingListOperation>().HasOne<Household>().WithMany().HasForeignKey(x => x.HouseholdId).OnDelete(DeleteBehavior.Cascade);
+        builder.Entity<ShoppingListOperation>().HasOne<ApplicationUser>().WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade);
 
         builder.Entity<Category>().HasIndex(x => new { x.HouseholdId, x.Name }).IsUnique();
         builder.Entity<Category>().HasAlternateKey(x => new { x.HouseholdId, x.Id });

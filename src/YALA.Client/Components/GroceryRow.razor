@@ -3,8 +3,17 @@
     @if (!string.IsNullOrWhiteSpace(Item.ImagePath)) { <ImageLightbox Src="@($"/images/{Item.ImagePath}")" Alt="@Item.Name" TriggerClass="grocery-thumb" Loading="lazy" /> }
     @if (Item.CatalogItemId is Guid catalogItemId) { <a class="grocery-item-link" href="/catalog/item/@catalogItemId"><GroceryItemContent Item="@Item" ShowPrices="@ShowPrices" CurrentStoreId="@CurrentStoreId" /></a> } else { <div class="grocery-item-link is-static"><GroceryItemContent Item="@Item" ShowPrices="@ShowPrices" CurrentStoreId="@CurrentStoreId" /></div> }
     <div class="row-end-controls">
-        @if (Item.IsAdHoc && ShowStoreAssignment && Stores.Count > 0) { <select class="assignment-select" aria-label="Store for @Item.Name" value="@(Item.AssignedStoreId?.ToString() ?? "")" @onchange="AssignChangedAsync"><option value="">Store…</option>@foreach (var store in Stores) { <option value="@store.Id">@store.Name</option> }</select> }
-        <div class="quantity-control" aria-label="Quantity"><button type="button" @onclick="() => OnQuantity.InvokeAsync((Item.Id, -1m))">−</button><span>@Item.Quantity.ToString("0.##")</span><button type="button" @onclick="() => OnQuantity.InvokeAsync((Item.Id, 1m))">+</button></div>
+        @if (Item.IsAdHoc && ShowStoreAssignment && Stores.Any(store => store.IsActive || store.Id == Item.AssignedStoreId))
+        {
+            <select class="assignment-select" aria-label="Store for @Item.Name" value="@(Item.AssignedStoreId?.ToString() ?? "")" @onchange="AssignChangedAsync">
+                <option value="">Store…</option>
+                @foreach (var store in Stores.Where(store => store.IsActive || store.Id == Item.AssignedStoreId))
+                {
+                    <option value="@store.Id" disabled="@(!store.IsActive)">@store.Name</option>
+                }
+            </select>
+        }
+        <div class="quantity-control" role="group" aria-label="Quantity for @Item.Name"><button type="button" aria-label="Decrease quantity of @Item.Name" @onclick="() => OnQuantity.InvokeAsync((Item.Id, -1m))">−</button><span>@Item.Quantity.ToString("0.##")</span><button type="button" aria-label="Increase quantity of @Item.Name" @onclick="() => OnQuantity.InvokeAsync((Item.Id, 1m))">+</button></div>
         <button class="remove-item" type="button" aria-label="Remove @Item.Name" @onclick="() => OnRemove.InvokeAsync(Item.Id)">×</button>
     </div>
 </article>

@@ -4,10 +4,15 @@
 @inject ApiClient Api
 
 <PageTitle>@(details?.Store.Name ?? "Store") · YALA</PageTitle>
+@if (!string.IsNullOrWhiteSpace(message)) { <p class="notice @(error ? "error" : "")" role="@(error ? "alert" : "status")">@message</p> }
 
 @if (loading)
 {
     <div class="loading-surface"><span class="spinner"></span> Loading store…</div>
+}
+else if (loadFailed)
+{
+    <button type="button" class="button button-outline" @onclick="RetryLoadAsync">Try again</button>
 }
 else if (details is null)
 {
@@ -24,8 +29,6 @@ else
         <div class="item-hero-copy"><p class="eyebrow">YOUR HOUSEHOLD STORE</p><h1>@details.Store.Name</h1><p>@details.Offers.Count item@(details.Offers.Count == 1 ? "" : "s") tracked at this store.</p><div class="item-status-line"><span class="item-status @(details.Store.IsActive ? "" : "archived")">@(details.Store.IsActive ? "Active store" : "Paused store")</span></div></div>
         <div class="item-hero-actions">@if (!editing) { <div class="store-detail-actions"><button type="button" class="button button-primary" @onclick="BeginEdit">Edit store <span>✎</span></button><button type="button" class="button button-outline" disabled="@storeActionSaving" @onclick="ToggleActiveAsync">@(storeActionSaving ? "Saving…" : details.Store.IsActive ? "Deactivate store" : "Activate store")</button></div> } else { <span class="item-editing-state"><span class="item-editing-dot"></span> Editing</span> }</div>
     </section>
-
-    @if (!string.IsNullOrWhiteSpace(message)) { <p class="notice @(error ? "error" : "")" role="status">@message</p> }
 
     @if (editing)
     {
@@ -55,25 +58,36 @@ else
     [Parameter] public Guid Id { get; set; }
 
     private YALA.Client.Models.StoreDetails? details;
-    private bool loading = true, editing, editingOffers, saving, offerSaving, storeActionSaving, error;
+    private bool loading = true, editing, editingOffers, saving, offerSaving, storeActionSaving, error, loadFailed;
     private string editName = "", aisle = "", priceText = "", message = "";
     private bool editActive;
     private Guid? catalogItemId;
     private Guid? offerSavingId;
     private readonly Dictionary<Guid, OfferEditModel> offerEdits = [];
 
-    protected override async Task OnParametersSetAsync() => await LoadAsync();
+    protected override Task OnParametersSetAsync() => RetryLoadAsync();
+
+    private async Task RetryLoadAsync()
+    {
+        error = loadFailed = false;
+        message = "";
+        try { await LoadAsync(); }
+        catch (Exception ex) { error = loadFailed = true; message = ex.Message; }
+    }
 
     private async Task LoadAsync()
     {
         loading = true;
-        details = await Api.GetStoreDetailsAsync(Id);
-        if (details is not null && !editing)
+        try
         {
-            editName = details.Store.Name;
-            editActive = details.Store.IsActive;
+            details = await Api.GetStoreDetailsAsync(Id);
+            if (details is not null && !editing)
+            {
+                editName = details.Store.Name;
+                editActive = details.Store.IsActive;
+            }
         }
-        loading = false;
+        finally { loading = false; }
     }
 
     private void BeginEdit()

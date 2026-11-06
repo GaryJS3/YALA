@@ -20,6 +20,102 @@ namespace YALA.Tests;
 public sealed class ActiveClientApiTests
 {
     [Fact]
+    public async Task Concurrent_replay_applies_a_list_operation_once_and_returns_the_original_result()
+    {
+        await using var app = new TestApplication();
+        using var http = app.CreateAuthenticatedClient("alice");
+        var (household, _) = await app.SeedAsync();
+        var operationId = Guid.NewGuid();
+        Task<HttpResponseMessage> SendAsync()
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, "/api/list/quick-add")
+            {
+                Content = JsonContent.Create(new QuickAddCommand("Bread"))
+            };
+            request.Headers.Add("X-Yala-Household", household.ToString());
+            request.Headers.Add("X-Yala-User", "alice");
+            request.Headers.Add("X-Yala-Operation", operationId.ToString());
+            return http.SendAsync(request);
+        }
+
+        var responses = await Task.WhenAll(SendAsync(), SendAsync());
+        using var first = responses[0];
+        using var second = responses[1];
+        Assert.Equal(HttpStatusCode.OK, first.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, second.StatusCode);
+        var id = await first.Content.ReadFromJsonAsync<Guid>();
+        Assert.Equal(id, await second.Content.ReadFromJsonAsync<Guid>());
+        var list = await http.GetFromJsonAsync<ListSnapshot>("/api/list");
+        var row = Assert.Single(list!.Rows);
+        Assert.Equal(id, row.Id);
+        Assert.Equal(1m, row.Quantity);
+    }
+
+    [Fact]
+    public async Task Clear_checked_keeps_rows_checked_after_the_original_snapshot()
+    {
+        await using var app = new TestApplication();
+        using var http = app.CreateAuthenticatedClient("alice");
+        var (household, _) = await app.SeedAsync();
+        var api = new ApiClient(http, new ClientState(), new BrowserStorage());
+        await api.GetSessionAsync();
+        var selected = (await api.QuickAddAsync("First"))!.Value;
+        var rechecked = (await api.QuickAddAsync("Second"))!.Value;
+        var addedLater = (await api.QuickAddAsync("Third"))!.Value;
+        await api.ToggleAsync(selected);
+        await api.ToggleAsync(rechecked);
+        var checkedRows = (await api.GetListAsync()).Rows.Where(x => x.IsChecked)
+            .Select(x => new CheckedListRow(x.Id, x.CheckedAt)).ToArray();
+        await api.ToggleAsync(rechecked);
+        await api.ToggleAsync(rechecked);
+        await api.ToggleAsync(addedLater);
+        var queued = new QueuedMutation
+        {
+            HouseholdId = household, UserId = "alice", Uri = "api/list/clear-checked",
+            BodyJson = System.Text.Json.JsonSerializer.Serialize(new ClearCheckedCommand(checkedRows))
+        };
+        await api.SendQueuedAsync(queued);
+        await api.SendQueuedAsync(queued);
+        var rows = (await api.GetListAsync()).Rows;
+        Assert.Equal(2, rows.Count);
+        Assert.All(rows, row => Assert.True(row.IsChecked));
+        Assert.DoesNotContain(rows, row => row.Id == selected);
+    }
+
+    [Fact]
+    public async Task Product_edits_round_trip_with_multiple_barcodes_and_keep_inactive_offer_prices()
+    {
+        await using var app = new TestApplication();
+        using var http = app.CreateAuthenticatedClient("alice");
+        var (_, item) = await app.SeedAsync();
+        var api = new ApiClient(http, new ClientState(), new BrowserStorage());
+        await api.SaveStoreAsync(null, "First store");
+        await api.SaveStoreAsync(null, "Second store");
+        var stores = await api.GetStoresAsync();
+        var firstStore = stores[0].Id;
+        var secondStore = stores[1].Id;
+        var variantId = (await api.SaveVariantAsync(new VariantSaveRequest
+        {
+            ItemId = item, Name = "Whole milk", Barcodes = ["11112222", "33334444"], StoreIds = [firstStore]
+        }))!.Value;
+        await api.SaveOfferAsync(new StoreOfferSaveRequest { StoreId = firstStore, CatalogItemId = item, ProductVariantId = variantId, Price = 3.5m });
+        await api.SaveVariantAsync(new VariantSaveRequest
+        {
+            Id = variantId, ItemId = item, Name = "Gallon milk", Preferred = true, Barcodes = ["33334444", "55556666"], StoreIds = [secondStore]
+        });
+        var variant = Assert.Single((await api.GetCatalogDetailsAsync(item))!.Variants);
+        Assert.Equal("Gallon milk", variant.Name);
+        Assert.True(variant.IsPreferred);
+        Assert.Equal(new[] { "33334444", "55556666" }, variant.Barcodes.Select(x => x.Barcode).Order());
+        Assert.Equal(secondStore, Assert.Single(variant.StoreIds));
+        Assert.Empty((await api.GetStoreDetailsAsync(firstStore))!.Offers);
+        await api.SetVariantStoreAvailabilityAsync(variantId, firstStore, true);
+        Assert.Equal(3.5m, Assert.Single((await api.GetStoreDetailsAsync(firstStore))!.Offers).LastPrice);
+        Assert.Null(await api.GetCatalogDetailsAsync(Guid.NewGuid()));
+        Assert.Null(await api.GetStoreDetailsAsync(Guid.NewGuid()));
+    }
+
+    [Fact]
     public async Task Replay_rejects_a_stale_client_identity_even_in_a_shared_household()
     {
         await using var app = new TestApplication();

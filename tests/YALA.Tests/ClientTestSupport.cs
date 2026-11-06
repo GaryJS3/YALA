@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.JSInterop;
 using YALA.Client.Models;
 using YALA.Client.Services;
@@ -21,6 +22,22 @@ internal sealed class BrowserStorage : IJSRuntime
         if (identifier.EndsWith("getItem")) result = storage.GetValueOrDefault((string)args![0]!);
         if (identifier.EndsWith("setItem")) storage[(string)args![0]!] = (string)args[1]!;
         if (identifier.EndsWith("removeItem")) storage.Remove((string)args![0]!);
+        if (identifier == "yalaOfflineQueue.update")
+        {
+            var key = (string)args![0]!;
+            var id = (string)args[1]!;
+            var replacement = (string?)args[2];
+            var pending = JsonSerializer.Deserialize<List<JsonElement>>(storage.GetValueOrDefault(key) ?? "[]")!;
+            var index = pending.FindIndex(x => x.GetProperty("operationId").GetString() == id);
+            if (replacement is not null)
+            {
+                var mutation = JsonSerializer.Deserialize<JsonElement>(replacement);
+                if (index < 0) pending.Add(mutation);
+                else pending[index] = mutation;
+            }
+            else if (index >= 0) pending.RemoveAt(index);
+            storage[key] = JsonSerializer.Serialize(pending);
+        }
         return ValueTask.FromResult(result is null ? default! : (TValue)result);
     }
 }

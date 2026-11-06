@@ -103,6 +103,7 @@ public static class YalaApiEndpoints
         secured.MapPost("/catalog/store", SetItemStoreAsync);
         secured.MapGet("/products/lookup/{barcode}", LookupProductAsync);
         secured.MapPost("/images/items/{id:guid}", UploadItemImageAsync);
+        secured.MapPost("/images/variants/{id:guid}", UploadVariantImageAsync);
         secured.MapPost("/images/stores/{id:guid}", UploadStoreImageAsync);
 
         secured.MapGet("/stores", GetStoresAsync);
@@ -201,48 +202,60 @@ public static class YalaApiEndpoints
     private static async Task<IResult> AddListItemAsync(ListItemCommand command, HouseholdService households, ShoppingListService lists, HttpContext http, CancellationToken cancellationToken)
     {
         await SelectHouseholdAsync(http, households, cancellationToken);
-        await lists.AddAsync(command.CatalogItemId, cancellationToken);
+        await lists.AddAsync(command.CatalogItemId, cancellationToken, GetOperationId(http));
         return Results.NoContent();
     }
 
     private static async Task<IResult> QuickAddAsync(QuickAddCommand command, HouseholdService households, ShoppingListService lists, HttpContext http, CancellationToken cancellationToken)
     {
         await SelectHouseholdAsync(http, households, cancellationToken);
-        return Results.Ok(await lists.QuickAddAsync(command.Name, cancellationToken));
+        return Results.Ok(await lists.QuickAddAsync(command.Name, cancellationToken, GetOperationId(http)));
     }
 
     private static async Task<IResult> ToggleAsync(ListRowCommand command, HouseholdService households, ShoppingListService lists, HttpContext http, CancellationToken cancellationToken)
     {
         await SelectHouseholdAsync(http, households, cancellationToken);
-        await lists.ToggleCheckedAsync(command.Id, cancellationToken);
+        await lists.ToggleCheckedAsync(command.Id, cancellationToken, GetOperationId(http));
         return Results.NoContent();
     }
 
     private static async Task<IResult> ChangeQuantityAsync(QuantityCommand command, HouseholdService households, ShoppingListService lists, HttpContext http, CancellationToken cancellationToken)
     {
         await SelectHouseholdAsync(http, households, cancellationToken);
-        await lists.ChangeQuantityAsync(command.Id, command.Delta, cancellationToken);
+        await lists.ChangeQuantityAsync(command.Id, command.Delta, cancellationToken, GetOperationId(http));
         return Results.NoContent();
     }
 
     private static async Task<IResult> RemoveAsync(ListRowCommand command, HouseholdService households, ShoppingListService lists, HttpContext http, CancellationToken cancellationToken)
     {
         await SelectHouseholdAsync(http, households, cancellationToken);
-        await lists.RemoveAsync(command.Id, cancellationToken);
+        await lists.RemoveAsync(command.Id, cancellationToken, GetOperationId(http));
         return Results.NoContent();
     }
 
     private static async Task<IResult> AssignStoreAsync(AssignStoreCommand command, HouseholdService households, ShoppingListService lists, HttpContext http, CancellationToken cancellationToken)
     {
         await SelectHouseholdAsync(http, households, cancellationToken);
-        await lists.AssignStoreAsync(command.Id, command.StoreId, cancellationToken);
+        await lists.AssignStoreAsync(command.Id, command.StoreId, cancellationToken, GetOperationId(http));
         return Results.NoContent();
     }
 
-    private static async Task<IResult> ClearCheckedAsync(HouseholdService households, ShoppingListService lists, HttpContext http, CancellationToken cancellationToken)
+    private static async Task<IResult> ClearCheckedAsync(ClearCheckedCommand? command, HouseholdService households, ShoppingListService lists, HttpContext http, CancellationToken cancellationToken)
     {
         await SelectHouseholdAsync(http, households, cancellationToken);
-        return Results.Ok(await lists.ClearCheckedAsync(cancellationToken));
+        var operationId = GetOperationId(http);
+        if (command?.Rows?.Any(row => row is null) == true)
+            return Results.BadRequest("Each checked row must identify an item.");
+        if (command?.Rows is null && (command is not null || http.Request.Headers.ContainsKey("X-Yala-User") || operationId is not null))
+            return Results.BadRequest("This saved change does not identify the checked items. Review the list and clear them again.");
+        return Results.Ok(await lists.ClearCheckedAsync(cancellationToken, operationId, command?.Rows));
+    }
+
+    private static Guid? GetOperationId(HttpContext http)
+    {
+        if (!http.Request.Headers.TryGetValue("X-Yala-Operation", out var value)) return null;
+        if (Guid.TryParse(value, out var id) && id != Guid.Empty) return id;
+        throw new ArgumentException("The list operation ID is invalid.");
     }
 
     private static async Task<IResult> GetCatalogAsync(string? query, bool includeArchived, HouseholdService households, CatalogService catalog, HttpContext http, CancellationToken cancellationToken)
@@ -287,7 +300,8 @@ public static class YalaApiEndpoints
     private static async Task<IResult> SaveCatalogAsync(CatalogSaveRequest command, HouseholdService households, CatalogService catalog, HttpContext http, CancellationToken cancellationToken)
     {
         await SelectHouseholdAsync(http, households, cancellationToken);
-        return Results.Ok(await catalog.SaveAsync(command.Id, command.Name, command.Description, command.CategoryId, command.DefaultQuantity, cancellationToken));
+        return Results.Ok(await catalog.SaveAsync(command.Id, command.Name, command.Description, command.CategoryId, command.DefaultQuantity,
+            cancellationToken, command.IsFavorite, command.IsArchived));
     }
 
     private static async Task<IResult> SetFavoriteAsync(CatalogFlagRequest command, HouseholdService households, CatalogService catalog, HttpContext http, CancellationToken cancellationToken)
@@ -315,13 +329,14 @@ public static class YalaApiEndpoints
         await SelectHouseholdAsync(http, households, cancellationToken);
         var id = command.Id is Guid variantId
             ? await UpdateVariantAndReturnIdAsync(catalog, variantId, command, cancellationToken)
-            : await catalog.SaveVariantAsync(command.ItemId, command.Name, command.Brand, command.Size, command.Preferred, command.Barcode, command.StoreIds ?? [], cancellationToken);
+            : await catalog.SaveVariantAsync(command.ItemId, command.Name, command.Brand, command.Size, command.Preferred,
+                command.Barcode, command.StoreIds, cancellationToken, command.Barcodes);
         return Results.Ok(id);
     }
 
     private static async Task<Guid> UpdateVariantAndReturnIdAsync(CatalogService catalog, Guid variantId, VariantSaveRequest command, CancellationToken cancellationToken)
     {
-        await catalog.UpdateVariantAsync(variantId, command.Name, command.Brand, command.Size, command.Preferred, command.Barcodes ?? [], cancellationToken);
+        await catalog.UpdateVariantAsync(variantId, command.Name, command.Brand, command.Size, command.Preferred, command.Barcodes ?? [], cancellationToken, command.StoreIds);
         return variantId;
     }
 
@@ -361,6 +376,16 @@ public static class YalaApiEndpoints
         if (file.Length <= 0 || file.Length > ImageService.MaximumImageBytes) return Results.BadRequest("Images must be 4 MB or smaller.");
         await using var stream = file.OpenReadStream();
         await images.SaveStoreImageUploadAsync(id, stream, cancellationToken);
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> UploadVariantImageAsync(Guid id, IFormFile file, HouseholdService households, ImageService images, HttpContext http, CancellationToken cancellationToken)
+    {
+        await SelectHouseholdAsync(http, households, cancellationToken);
+        if (file.Length <= 0 || file.Length > ImageService.MaximumImageBytes) return Results.BadRequest("Images must be 4 MB or smaller.");
+        await using var stream = file.OpenReadStream();
+        var itemId = await images.SaveVariantImageUploadAsync(id, stream, cancellationToken);
+        await images.PromoteBestVariantImageToItemIfMissingAsync(itemId, cancellationToken);
         return Results.NoContent();
     }
 

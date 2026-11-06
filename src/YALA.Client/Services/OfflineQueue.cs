@@ -6,7 +6,6 @@ namespace YALA.Client.Services;
 public sealed class OfflineQueue(IJSRuntime js)
 {
     private const string StorageKey = "yala.pending-mutations.v2";
-    private readonly SemaphoreSlim gate = new(1, 1);
     private static readonly JsonSerializerOptions Options = new(JsonSerializerDefaults.Web);
 
     public async Task<bool> HasLegacyChangesAsync() =>
@@ -24,28 +23,13 @@ public sealed class OfflineQueue(IJSRuntime js)
         catch (Exception ex) when (ex is JSException or JsonException) { return []; }
     }
 
-    public async Task EnqueueAsync(QueuedMutation mutation)
-    {
-        await gate.WaitAsync();
-        try
-        {
-            var pending = (await GetAsync()).ToList();
-            pending.RemoveAll(x => x.OperationId == mutation.OperationId);
-            pending.Add(mutation);
-            await SaveAsync(pending);
-        }
-        finally { gate.Release(); }
-    }
+    public Task EnqueueAsync(QueuedMutation mutation) =>
+        UpdateAsync(mutation.OperationId, JsonSerializer.Serialize(mutation, Options));
 
-    public async Task RemoveAsync(Guid operationId)
-    {
-        await gate.WaitAsync();
-        try { await SaveAsync((await GetAsync()).Where(x => x.OperationId != operationId).ToList()); }
-        finally { gate.Release(); }
-    }
+    public Task RemoveAsync(Guid operationId) => UpdateAsync(operationId, null);
 
-    private Task SaveAsync(IReadOnlyList<QueuedMutation> pending) =>
-        js.InvokeVoidAsync("localStorage.setItem", StorageKey, JsonSerializer.Serialize(pending, Options)).AsTask();
+    private Task UpdateAsync(Guid operationId, string? replacement) =>
+        js.InvokeVoidAsync("yalaOfflineQueue.update", StorageKey, operationId.ToString(), replacement).AsTask();
 }
 
 public sealed class QueuedMutation
